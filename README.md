@@ -19,7 +19,7 @@ uv self update && uv venv --python 3.14 && uv sync --frozen
 ## Running the app
 
 ```powershell
-uv run app.py
+uv run nms_viewer.py
 ```
 
 Then open your browser to **http://localhost:5000**
@@ -75,9 +75,13 @@ Sorting by the Portal Address column sorts by **system index first**, then plane
 
 | File | Purpose |
 |------|---------|
-| `app.py` | Flask server — loads save data, single route |
-| `extract_nms_bases_v8.py` | Data engine — parses `.hg.json`, decodes portal addresses |
+| `nms_viewer.py` | Flask server — loads save data, single route |
 | `templates/index.html` | Single-page UI (tabs, filtering, sorting, glyph rendering) |
 | `static/glyphs/glyph_0.png` … `glyph_F.png` | NMS portal glyph images |
 | `save.hg.json` | Your NMS save file (not included — add your own) |
-| `nms_base_reports/` | Legacy CSV reports produced by the original script |
+
+
+# To be added:
+- open file dialog to find the json file
+- keep a local sqlite db so as discoveries, etc roll out of the save file we preserve them; so we can get back to them via the glpyhs
+- allow program to read the NMS save directly and generate the json
