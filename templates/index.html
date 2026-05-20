@@ -1,0 +1,566 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NMS Base Viewer</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+    background: #070b14;
+    color: #c8d8e8;
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    font-size: 14px;
+    min-height: 100vh;
+}
+
+/* ── HEADER ── */
+header {
+    background: linear-gradient(135deg, #0d1a2d 0%, #071428 100%);
+    border-bottom: 1px solid #1a3a5c;
+    padding: 14px 24px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex-wrap: wrap;
+}
+.header-title {
+    font-size: 1.25rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: #00d4ff;
+    font-weight: 300;
+}
+.header-stats { display: flex; gap: 8px; flex-wrap: wrap; margin-left: auto; }
+.stat-pill {
+    background: rgba(0,180,220,.1);
+    border: 1px solid rgba(0,180,220,.25);
+    border-radius: 20px;
+    padding: 3px 11px;
+    font-size: 12px;
+    color: #80d8ff;
+    white-space: nowrap;
+}
+
+/* ── TABS ── */
+.tab-nav {
+    display: flex;
+    padding: 0 24px;
+    background: #09101e;
+    border-bottom: 1px solid #1a3a5c;
+}
+.tab-btn {
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: #506070;
+    cursor: pointer;
+    font-size: 12px;
+    letter-spacing: .08em;
+    padding: 9px 18px 11px;
+    text-transform: uppercase;
+    transition: color .15s, border-color .15s;
+}
+.tab-btn:hover { color: #90b8d0; }
+.tab-btn.active { color: #00d4ff; border-bottom-color: #00d4ff; }
+
+/* ── PANELS ── */
+.tab-panel { display: none; padding: 20px 24px; }
+.tab-panel.active { display: block; }
+
+/* ── SECTION LABEL ── */
+.section-label {
+    color: #405060;
+    font-size: 11px;
+    letter-spacing: .1em;
+    margin-bottom: 12px;
+    text-transform: uppercase;
+}
+
+/* ── TABLES ── */
+.data-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+}
+.data-table th {
+    background: #0a1525;
+    border-bottom: 1px solid #1a3a5c;
+    color: #4090b0;
+    cursor: pointer;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: .08em;
+    padding: 8px 12px;
+    text-align: left;
+    text-transform: uppercase;
+    user-select: none;
+    white-space: nowrap;
+}
+.data-table th:hover { color: #70b8d8; }
+.data-table th .sort-arrow { color: #00d4ff; margin-left: 4px; }
+.data-table td {
+    border-bottom: 1px solid #0e1820;
+    padding: 6px 12px;
+    vertical-align: middle;
+}
+.data-table tbody tr:hover td { background: rgba(0,160,200,.05); }
+
+.summary-table { max-width: 420px; }
+.summary-table td:nth-child(2),
+.summary-table td:nth-child(3) { text-align: right; }
+.summary-table td:nth-child(3) { color: #00d4ff; font-weight: 500; }
+
+.mono {
+    font-family: 'Courier New', monospace;
+    letter-spacing: .04em;
+    color: #90b8d0;
+}
+.fav-star { color: #ffd700; margin-right: 3px; }
+
+/* ── GALAXY / BASE BADGES ── */
+.gal-badge {
+    background: rgba(0,130,180,.15);
+    border: 1px solid rgba(0,130,180,.3);
+    border-radius: 3px;
+    color: #6aaac8;
+    font-size: 11px;
+    padding: 1px 7px;
+    white-space: nowrap;
+}
+.base-badge {
+    background: rgba(0,200,100,.12);
+    border: 1px solid rgba(0,200,100,.3);
+    border-radius: 3px;
+    color: #40c878;
+    font-size: 11px;
+    padding: 1px 6px;
+    white-space: nowrap;
+    cursor: default;
+}
+
+/* ── FILTER BAR ── */
+.filter-bar { align-items: center; display: flex; gap: 10px; margin-bottom: 12px; }
+.filter-input {
+    background: #0c1828;
+    border: 1px solid #1e3a5c;
+    border-radius: 4px;
+    color: #c0d0e0;
+    font-size: 13px;
+    outline: none;
+    padding: 6px 12px;
+    transition: border-color .15s;
+    width: 300px;
+}
+.filter-input:focus { border-color: #0090b8; }
+.filter-input::placeholder { color: #344050; }
+.filter-count { color: #506070; font-size: 12px; }
+.table-wrap { overflow-x: auto; }
+
+/* ── NMS GLYPHS ── */
+.glyphs { white-space: nowrap; line-height: 1; }
+.gi {
+    display: inline-block;
+    vertical-align: middle;
+    margin: 0 1px;
+    width: 22px;
+    height: 22px;
+}
+.gi img {
+    display: block;
+    width: 22px;
+    height: 22px;
+    /* Wiki PNGs are dark-on-light; invert so they render white on our dark bg */
+    filter: brightness(0) invert(1);
+    opacity: 0.88;
+}
+
+/* ── GLYPH LEGEND ── */
+.glyph-legend { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 24px; }
+.legend-item { align-items: center; display: flex; gap: 5px; font-size: 11px; color: #506070; }
+
+@media (max-width: 680px) {
+    header { gap: 8px; }
+    .header-stats { margin-left: 0; }
+    .tab-nav, .tab-panel { padding-left: 12px; padding-right: 12px; }
+    .filter-input { width: 100%; }
+}
+</style>
+</head>
+<body>
+
+<!-- (no SVG defs needed — glyphs are PNG) -->
+<svg width="0" height="0" style="display:none">
+  <defs>
+    <!-- 0 SUNRISE: horizon + semicircle + 3 rays -->
+    <symbol id="gs0" viewBox="0 0 24 24">
+      <line x1="2" y1="16" x2="22" y2="16" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+      <path d="M 6 16 A 6 6 0 0 1 18 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+      <line x1="12" y1="3" x2="12" y2="7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+      <line x1="4.5" y1="5.5" x2="6.8" y2="8.2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+      <line x1="19.5" y1="5.5" x2="17.2" y2="8.2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+    </symbol>
+
+    <!-- 1 BIRD: spread wings (M shape) + body + tail -->
+    <symbol id="gs1" viewBox="0 0 24 24">
+      <path d="M 2 14 C 6 7 10 14 12 10 C 14 14 18 7 22 14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M 10 18 L 12 10 L 14 18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+    </symbol>
+
+    <!-- 2 FACE: circle + two filled eyes -->
+    <symbol id="gs2" viewBox="0 0 24 24">
+      <circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.8"/>
+      <circle cx="9" cy="10" r="1.8" fill="currentColor" stroke="none"/>
+      <circle cx="15" cy="10" r="1.8" fill="currentColor" stroke="none"/>
+    </symbol>
+
+    <!-- 3 DIPLO: long-neck dinosaur silhouette -->
+    <symbol id="gs3" viewBox="0 0 24 24">
+      <path d="M 3 20 Q 9 22 14 17 Q 19 11 21 7 Q 23 3 20 4 Q 22 8 18 9" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+    </symbol>
+
+    <!-- 4 ECLIPSE: two overlapping circles -->
+    <symbol id="gs4" viewBox="0 0 24 24">
+      <circle cx="9" cy="12" r="7" fill="none" stroke="currentColor" stroke-width="1.8"/>
+      <circle cx="15" cy="12" r="7" fill="none" stroke="currentColor" stroke-width="1.8"/>
+    </symbol>
+
+    <!-- 5 BALLOON: teardrop (round top, tapers to point) -->
+    <symbol id="gs5" viewBox="0 0 24 24">
+      <path d="M 12 22 C 9 19 5 16 5 11 A 7 7 0 0 1 19 11 C 19 16 15 19 12 22 Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+    </symbol>
+
+    <!-- 6 BOAT: hull + mast + crossbeam -->
+    <symbol id="gs6" viewBox="0 0 24 24">
+      <path d="M 3 13 Q 12 22 21 13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+      <line x1="3" y1="13" x2="21" y2="13" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+      <line x1="12" y1="4" x2="12" y2="13" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+      <line x1="9" y1="4" x2="15" y2="4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+    </symbol>
+
+    <!-- 7 BUG: oval body + head + antennae + 3 pairs of legs -->
+    <symbol id="gs7" viewBox="0 0 24 24">
+      <ellipse cx="12" cy="15" rx="4" ry="6" fill="none" stroke="currentColor" stroke-width="1.8"/>
+      <circle cx="12" cy="6" r="2.5" fill="none" stroke="currentColor" stroke-width="1.8"/>
+      <line x1="10.5" y1="3.8" x2="8.5" y2="1.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+      <line x1="13.5" y1="3.8" x2="15.5" y2="1.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+      <line x1="8" y1="12" x2="3" y2="10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+      <line x1="8" y1="15" x2="3" y2="15" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+      <line x1="8" y1="18" x2="3" y2="20" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+      <line x1="16" y1="12" x2="21" y2="10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+      <line x1="16" y1="15" x2="21" y2="15" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+      <line x1="16" y1="18" x2="21" y2="20" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+    </symbol>
+
+    <!-- 8 DRAGONFLY: vertical body + 2 pairs of curved wings -->
+    <symbol id="gs8" viewBox="0 0 24 24">
+      <line x1="12" y1="2" x2="12" y2="22" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+      <path d="M 12 8 Q 6 5 2 8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+      <path d="M 12 8 Q 18 5 22 8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+      <path d="M 12 15 Q 6 18 2 15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+      <path d="M 12 15 Q 18 18 22 15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+    </symbol>
+
+    <!-- 9 GALAXY: open spiral -->
+    <symbol id="gs9" viewBox="0 0 24 24">
+      <path d="M 12 12 Q 17 7 12 4 Q 6 4 5 10 Q 4 17 10 20 Q 18 21 21 15 Q 22 8 17 5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+    </symbol>
+
+    <!-- A OCTAGON -->
+    <symbol id="gsA" viewBox="0 0 24 24">
+      <polygon points="9,3 15,3 21,9 21,15 15,21 9,21 3,15 3,9" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+    </symbol>
+
+    <!-- B FISH: lens body + forked tail + eye -->
+    <symbol id="gsB" viewBox="0 0 24 24">
+      <path d="M 4 12 Q 10 5 16 12 Q 10 19 4 12 Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+      <line x1="16" y1="12" x2="21" y2="8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+      <line x1="16" y1="12" x2="21" y2="16" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+      <circle cx="8.5" cy="11" r="1.4" fill="currentColor" stroke="none"/>
+    </symbol>
+
+    <!-- C TENT: triangle -->
+    <symbol id="gsC" viewBox="0 0 24 24">
+      <polygon points="12,3 22,21 2,21" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+    </symbol>
+
+    <!-- D ROCKET: pointed body + fins + porthole -->
+    <symbol id="gsD" viewBox="0 0 24 24">
+      <path d="M 12 2 C 17 7 17 14 15 18 L 9 18 C 7 14 7 7 12 2 Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M 9 16 L 5 22 L 9 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M 15 16 L 19 22 L 15 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+      <circle cx="12" cy="10" r="2.5" fill="none" stroke="currentColor" stroke-width="1.5"/>
+    </symbol>
+
+    <!-- E TREE: two stacked triangles + trunk -->
+    <symbol id="gsE" viewBox="0 0 24 24">
+      <line x1="12" y1="18" x2="12" y2="22" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+      <polygon points="12,3 21,13 3,13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+      <polygon points="12,9 20,19 4,19" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+    </symbol>
+
+    <!-- F ATLAS: diamond outline + inner circle -->
+    <symbol id="gsF" viewBox="0 0 24 24">
+      <path d="M 12 2 L 22 12 L 12 22 L 2 12 Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+      <circle cx="12" cy="12" r="3.5" fill="none" stroke="currentColor" stroke-width="1.5"/>
+    </symbol>
+  </defs>
+</svg>
+
+<!-- ═══ HEADER ═══ -->
+<header>
+  <div class="header-title">&#9670; NMS Base Viewer</div>
+  <div class="header-stats">
+    <span class="stat-pill">{{ stats.total_bases }} Bases</span>
+    <span class="stat-pill">&#9733; {{ stats.favourites }} Favourites</span>
+    <span class="stat-pill">{{ stats.galaxies }} Galaxies</span>
+    <span class="stat-pill">{{ stats.discoveries }} Discoveries</span>
+  </div>
+</header>
+
+<!-- ═══ TAB NAV ═══ -->
+<nav class="tab-nav">
+  <button class="tab-btn active" data-tab="summary">Summary</button>
+  <button class="tab-btn" data-tab="bases">Bases ({{ bases|length }})</button>
+  <button class="tab-btn" data-tab="discoveries">Discoveries ({{ discoveries|length }})</button>
+</nav>
+
+<!-- ═══ SUMMARY ═══ -->
+<div id="tab-summary" class="tab-panel active">
+  <p class="section-label">Bases by galaxy</p>
+  <div class="table-wrap">
+    <table class="data-table summary-table" id="summary-table">
+      <thead>
+        <tr>
+          <th>Galaxy</th>
+          <th style="text-align:right">#</th>
+          <th style="text-align:right">Bases</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for g in galaxy_summary %}
+        <tr>
+          <td>{{ g.name }}</td>
+          <td class="mono" style="text-align:right">{{ g.num }}</td>
+          <td style="text-align:right">{{ g.count }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="glyph-legend">
+    {% set glyph_names = [
+      ('0','Sunrise'),('1','Bird'),('2','Face'),('3','Diplo'),
+      ('4','Eclipse'),('5','Balloon'),('6','Boat'),('7','Bug'),
+      ('8','Dragonfly'),('9','Galaxy'),('A','Octagon'),('B','Fish'),
+      ('C','Tent'),('D','Rocket'),('E','Tree'),('F','Atlas')
+    ] %}
+    {% for hex, name in glyph_names %}
+    <span class="legend-item">
+      <span class="gi"><img src="/static/glyphs/glyph_{{ hex }}.png" alt="{{ hex }}"></span>{{ name }}
+    </span>
+    {% endfor %}
+  </div>
+</div>
+
+<!-- ═══ BASES ═══ -->
+<div id="tab-bases" class="tab-panel">
+  <div class="filter-bar">
+    <input class="filter-input" id="bases-filter" type="text"
+           placeholder="Filter by name, galaxy, portal address…" />
+    <span class="filter-count" id="bases-count">{{ bases|length }} bases</span>
+  </div>
+  <div class="table-wrap">
+    <table class="data-table" id="bases-table">
+      <thead>
+        <tr>
+          <th>Galaxy</th>
+          <th style="text-align:right">#</th>
+          <th>Base Name</th>
+          <th title="Format: PSSS YYZZ ZXXX — P=planet (1 digit), SSS=system index (3), YY=voxelY (2), ZZZ=voxelZ (3), XXX=voxelX (3). Sorted by system index first, then planet, then voxel coordinates.">Portal Address</th>
+          <th>Glyphs</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for b in bases %}
+        <tr>
+          <td data-val="{{ b.galaxy }}"><span class="gal-badge">{{ b.galaxy }}</span></td>
+          <td class="mono" style="text-align:right" data-val="{{ b.galaxy_num }}">{{ b.galaxy_num }}</td>
+          <td>{% if b.favourite %}<span class="fav-star">&#9733;</span>{% endif %}{{ b.name }}</td>
+          <td class="mono" data-val="{{ b.portal_sort_key }}">{{ b.portal_hex }}</td>
+          <td class="glyphs">{% for g in b.glyphs %}<span class="gi"><img src="/static/glyphs/glyph_{{ g }}.png" alt="{{ g }}"></span>{% endfor %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ═══ DISCOVERIES ═══ -->
+<div id="tab-discoveries" class="tab-panel">
+  <div class="filter-bar" style="flex-wrap:wrap; gap:8px 16px;">
+    <input class="filter-input" id="disc-filter" type="text"
+           placeholder="Filter by name, discoverer, galaxy, or portal address…" style="flex:1;min-width:200px"/>
+    <span class="filter-count" id="disc-count">{{ discoveries|length }} discoveries</span>
+    <div id="disc-type-filters" style="display:flex;gap:10px;flex-wrap:wrap;width:100%;padding-top:4px;">
+      {% for dt in ['Animal','Flora','Mineral','Planet','Sector','SolarSystem'] %}
+      <label style="display:flex;align-items:center;gap:4px;font-size:11px;color:#80b0c8;cursor:pointer;text-transform:uppercase;letter-spacing:.06em;">
+        <input type="checkbox" class="disc-type-cb" data-type="{{ dt }}" checked style="accent-color:#00d4ff;">
+        {{ dt }}
+      </label>
+      {% endfor %}
+    </div>
+  </div>
+  <div class="table-wrap">
+    <table class="data-table" id="disc-table">
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Galaxy</th>
+          <th style="text-align:right">#</th>
+          <th title="Format: PSSS YYZZ ZXXX — P=planet (1 digit), SSS=system index (3), YY=voxelY (2), ZZZ=voxelZ (3), XXX=voxelX (3). Sorted by system index first, then planet, then voxel coordinates.">Portal Address</th>
+          <th>Glyphs</th>
+          <th>Name</th>
+          <th>Discoverer</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for d in discoveries %}
+        <tr>
+          <td style="font-size:11px">{{ d.dt }}</td>
+          <td>{% if d.galaxy %}<span class="gal-badge">{{ d.galaxy }}</span>{% endif %}</td>
+          <td class="mono" style="text-align:right" data-val="{{ d.galaxy_num }}">{{ d.galaxy_num }}</td>
+          <td class="mono" data-val="{{ d.portal_sort_key }}">{{ d.portal_hex }}</td>
+          <td class="glyphs">{% for g in d.glyphs %}<span class="gi"><img src="/static/glyphs/glyph_{{ g }}.png" alt="{{ g }}"></span>{% endfor %}</td>
+          <td>{{ d.custom_name }}</td>
+          <td style="font-size:11px">{{ d.discoverer }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+// ── TAB SWITCHING ──
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
+  });
+});
+
+// ── TABLE FILTER ──
+function wireFilter(inputId, tableId, countId, noun) {
+  const input  = document.getElementById(inputId);
+  const tbody  = document.getElementById(tableId).querySelector('tbody');
+  const rows   = Array.from(tbody.querySelectorAll('tr'));
+  const total  = rows.length;
+  const countEl = document.getElementById(countId);
+
+  input.addEventListener('input', () => {
+    const q = input.value.trim().toLowerCase();
+    let shown = 0;
+    rows.forEach(row => {
+      const hit = !q || row.textContent.toLowerCase().includes(q);
+      row.style.display = hit ? '' : 'none';
+      if (hit) shown++;
+    });
+    countEl.textContent = q ? `${shown} of ${total} ${noun}` : `${total} ${noun}`;
+  });
+}
+
+wireFilter('bases-filter', 'bases-table', 'bases-count', 'bases');
+
+// Discoveries: text filter + type checkboxes combined
+(function() {
+  const input    = document.getElementById('disc-filter');
+  const tbody    = document.getElementById('disc-table').querySelector('tbody');
+  const rows     = Array.from(tbody.querySelectorAll('tr'));
+  const countEl  = document.getElementById('disc-count');
+  const total    = rows.length;
+  const checkboxes = Array.from(document.querySelectorAll('.disc-type-cb'));
+
+  function applyFilters() {
+    const q = input.value.trim().toLowerCase();
+    const allowed = new Set(checkboxes.filter(cb => cb.checked).map(cb => cb.dataset.type));
+    let shown = 0;
+    rows.forEach(row => {
+      const typeCell = row.cells[0];
+      const rowType  = (typeCell?.textContent ?? '').trim();
+      const textHit  = !q || row.textContent.toLowerCase().includes(q);
+      const typeHit  = allowed.has(rowType);
+      const visible  = textHit && typeHit;
+      row.style.display = visible ? '' : 'none';
+      if (visible) shown++;
+    });
+    countEl.textContent = `${shown} of ${total} discoveries`;
+  }
+
+  input.addEventListener('input', applyFilters);
+  checkboxes.forEach(cb => cb.addEventListener('change', applyFilters));
+  applyFilters();
+})();
+
+// ── SORTABLE COLUMNS ──
+function makeSortable(tableId) {
+  const table   = document.getElementById(tableId);
+  const headers = Array.from(table.querySelectorAll('thead th'));
+  const tbody   = table.querySelector('tbody');
+
+  headers.forEach((th, colIdx) => {
+    let asc = true;
+    th.addEventListener('click', () => {
+      // Clear arrows on other headers
+      headers.forEach(h => {
+        const a = h.querySelector('.sort-arrow');
+        if (a) a.remove();
+      });
+      // Add arrow to clicked header
+      const arrow = document.createElement('span');
+      arrow.className = 'sort-arrow';
+      arrow.textContent = asc ? ' ↑' : ' ↓';
+      th.appendChild(arrow);
+
+      // Collect only visible rows so filtered rows aren't unsorted into view
+      const allRows = Array.from(tbody.querySelectorAll('tr'));
+      allRows.sort((a, b) => {
+        // Prefer data-val attribute so badge cells sort by their text, not inner HTML
+        const aCell = a.cells[colIdx];
+        const bCell = b.cells[colIdx];
+        const aText = (aCell?.dataset.val ?? aCell?.textContent ?? '').trim().toLowerCase();
+        const bText = (bCell?.dataset.val ?? bCell?.textContent ?? '').trim().toLowerCase();
+
+        // Hex sort must come first — parseFloat would misread hex like "0e52…" as scientific notation
+        const aHexStr = aText.replace(/\s/g, '');
+        const bHexStr = bText.replace(/\s/g, '');
+        if (/^[0-9a-f]+$/.test(aHexStr) && /^[0-9a-f]+$/.test(bHexStr)) {
+          const aHex = parseInt(aHexStr, 16);
+          const bHex = parseInt(bHexStr, 16);
+          return asc ? aHex - bHex : bHex - aHex;
+        }
+
+        // Decimal numeric sort (non-hex values)
+        const aNum = parseFloat(aText);
+        const bNum = parseFloat(bText);
+        if (!isNaN(aNum) && !isNaN(bNum)) return asc ? aNum - bNum : bNum - aNum;
+
+        // Fallback: locale-aware string sort
+        return asc ? aText.localeCompare(bText) : bText.localeCompare(aText);
+      });
+      allRows.forEach(row => tbody.appendChild(row));
+      asc = !asc;
+    });
+  });
+}
+
+makeSortable('summary-table');
+makeSortable('bases-table');
+makeSortable('disc-table');
+</script>
+</body>
+</html>
