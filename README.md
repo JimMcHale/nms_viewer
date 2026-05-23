@@ -1,23 +1,34 @@
+# NMS Viewer
 
-# Last modified on: 23-May-2026 08:03:24
+An interactive browser-based viewer for No Man's Sky save data. Displays your bases and discoveries (planets, sectors, solar systems, flora, fauna, minerals) with real NMS portal glyphs, sortable columns, and text filtering.
 
-# NMS Bases Viewer
-An interactive browser-based viewer for No Man's Sky save data. Displays your bases and visited systems with real NMS portal glyphs, sortable columns, and text filtering.
-
-This work was inspired by the work of ebaleytherogue's python base script.. I was going to make that display a simple web page and well....
+Inspired by ebaleytherogue's Python base script.
 
 ## Requirements
 
 - Install [uv](https://docs.astral.sh/uv/)
-- use GoatFungus or another NMS editor to save your game files as a JSON file (in GF its menu Edit->export JSON). You will want to be doing this regularly, so choose a name which includes the date so you arent overwriting them. eg "2026-05-21.json"
+- Use GoatFungus or another NMS save editor to export your save as JSON (in GoatFungus: **Edit → Export JSON**)
 
 ## Setup
 
-**First time only** — update uv, create the virtual environment, and install dependencies from the lockfile:
+**First time only** — update uv, create the virtual environment, and install dependencies:
 
 ```powershell
 uv self update && uv venv --python 3.14 && uv sync --frozen
 ```
+
+## Adding save files
+
+Place exported JSON files in the `imports/` directory. Name them with a `YYYY-MM-DD` date prefix so they load in chronological order:
+
+```
+imports/2026-05-16.json
+imports/2026-05-22.json
+```
+
+Files without a date prefix are sorted by their modification time on disk and loaded after any dated files that predate them.
+
+All files in `imports/` are merged on each load. Duplicate records across files are deduplicated — if the same discovery appears in multiple exports, the version with the most data (name, discoverer) is kept.
 
 ## Running the app
 
@@ -25,24 +36,28 @@ uv self update && uv venv --python 3.14 && uv sync --frozen
 uv run nms_viewer.py
 ```
 
-Then open your browser to **http://localhost:5000**  (Note that the app may choose another port if you already have 5000 in use. Open the URL its showing. 127.0.0.1 is the same as localhost)
+Then open **http://localhost:5000** in your browser. (If port 5000 is in use the app will pick another — check the terminal output.)
 
-The app reads json files from its imports directory. It will load all the json files in imports into the current session. 
-
-## Finding your NMS save file
-
-NMS save files are typically located at:
+On startup the console prints a summary for each file loaded, followed by overall totals:
 
 ```
-%APPDATA%\HelloGames\NMS\<SteamID>\save.hg
-```
+--- 2026-05-16.json ---
+  Bases: 12  Planets: 97  Sectors: 18  Solar Systems: 45
+  NEW Planet: Ayphos Sigma | 1024 AB23 456C | Euclid | JimMcHale
 
-The file has no `.json` extension by default. Either rename a copy to `save.hg.json` and place it in this directory, or use the `?save=` URL parameter to point to any `.hg.json` file you have prepared.
+--- 2026-05-22.json ---
+  Bases: 14  Planets: 102  Sectors: 19  Solar Systems: 47
+  UPDATED SolarSystem: 1024 AB23 456C  name: '' -> 'New Lennox'  discoverer: '' -> 'JimMcHale'
+
+=== TOTALS ===
+  Bases: 14  Planets: 102  Sectors: 19  Solar Systems: 47
+  Named systems: 12  Unnamed systems: 35
+```
 
 ## Features
 
 ### Summary tab
-- Count of bases per galaxy with galaxy name and human-readable galaxy number (e.g. `Euclid/1`, `Eissentam/10`)
+- Count of bases per galaxy with galaxy name and human-readable galaxy number 
 - Glyph legend showing all 16 NMS portal symbols with their names
 
 ### Bases tab
@@ -50,11 +65,12 @@ The file has no `.json` extension by default. Either rename a copy to `save.hg.j
 - Text filter — searches across name, portal address, and galaxy
 - Click any column header to sort; click again to reverse
 
-### Visited Systems tab
-- Up to 512 visited systems decoded from the save file's `VisitedSystems` buffer. If you export a JSON file each week it will have all the 
-- Columns: galaxy, system index, region (X/Y/Z voxel coordinates), portal address, glyphs
-- Systems that contain one of your bases are marked with a **Base** badge; hover it to see the base name(s)
-- Note: `VisitedSystems` is a rolling buffer for the current galaxy only, so all entries will show the galaxy you are currently in
+### Discoveries tab
+- All discoveries decoded from `DiscoveryManagerData` in the save file
+- Types: Planet, Sector, SolarSystem, Animal, Flora, Mineral
+- Defaults to showing **Planets only** — use the type checkboxes to add or remove types
+- Text filter searches across name, discoverer, galaxy, and portal address
+- **Name column**: a name only appears here if you have explicitly saved it in-game. To save a name without changing it, open the discovery, click **Rename**, and accept. NMS only writes the name to the save once you confirm it.
 
 ## Portal address format
 
@@ -68,24 +84,26 @@ Addresses are displayed as three groups of 4 hex digits (`PSSS YYZZ ZXXX`):
 | ZZZ     | 3      | Voxel Z coordinate |
 | XXX     | 3      | Voxel X coordinate |
 
-Sorting by the Portal Address column sorts by **system index first**, then planet, then voxel coordinates — the display order is unchanged so you can still copy the address directly into a portal decoder.
+Sorting by Portal Address sorts by **system index first**, then planet, then voxel coordinates — the display order is unchanged so you can copy the address directly into a portal decoder.
 
-## Items with no names
-- Only if you explicitly name an item does it have a name in the json file. We arent able to duplicate the procedurally generated names..
-- *However* if you click on 'rename' an item and just click 'accept', without changing the name, its still marked as explicitly named by you and will be in the json file.
-- If you go into the game discoveries -> Visited Systems tab you can rename all the systems you have discovered (click X, then accept)
-- For items that you didnt find the names will be blank since the game gets them from the servers. A future option will allow you to type in the names and have them saved in a local database.
+## Getting discovery names into the save
+
+NMS does not store procedurally generated names — it fetches them from its servers at runtime. The only names that appear in the save (and therefore here) are ones you have explicitly confirmed in-game:
+
+- Go to **Discoveries → Visited Systems**
+- Click on a system, hit **Rename**, and accept (no need to change anything)
+- That name is now written to your save and will appear here after the next export
 
 ## Files
 
 | File | Purpose |
 |------|---------|
-| `nms_viewer.py` | Flask server — loads save data, single route |
+| `nms_viewer.py` | Flask server — loads and merges all imports, single route |
+| `extract_nms_bases_v8.py` | Save file parser (bases, portal decoding, galaxy names) |
 | `templates/index.html` | Single-page UI (tabs, filtering, sorting, glyph rendering) |
 | `static/glyphs/glyph_0.png` … `glyph_F.png` | NMS portal glyph images |
-| `save.hg.json` | Your NMS save file (not included — add your own) |
+| `imports/` | Drop your exported JSON save files here |
 
+## To be added
 
-# To be added:
-- keep a local sqlite db so as discoveries, etc roll out of the save file we preserve them; so we can get back to them via the glpyhs
-
+- Local SQLite database to preserve discoveries as they roll out of the save file's fixed-size buffer, so portal addresses are never lost
