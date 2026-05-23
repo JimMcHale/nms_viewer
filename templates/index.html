@@ -407,7 +407,7 @@ header {
     <div id="disc-type-filters" style="display:flex;gap:10px;flex-wrap:wrap;width:100%;padding-top:4px;">
       {% for dt in ['Animal','Flora','Mineral','Planet','Sector','SolarSystem'] %}
       <label style="display:flex;align-items:center;gap:4px;font-size:11px;color:#80b0c8;cursor:pointer;text-transform:uppercase;letter-spacing:.06em;">
-        <input type="checkbox" class="disc-type-cb" data-type="{{ dt }}" checked style="accent-color:#00d4ff;">
+        <input type="checkbox" class="disc-type-cb" data-type="{{ dt }}" {% if dt == 'Planet' %}checked{% endif %} style="accent-color:#00d4ff;">
         {{ dt }}
       </label>
       {% endfor %}
@@ -422,7 +422,7 @@ header {
           <th style="text-align:right">#</th>
           <th title="Format: PSSS YYZZ ZXXX — P=planet (1 digit), SSS=system index (3), YY=voxelY (2), ZZZ=voxelZ (3), XXX=voxelX (3). Sorted by system index first, then planet, then voxel coordinates.">Portal Address</th>
           <th>Glyphs</th>
-          <th>Name</th>
+          <th title="To make a name appear here, open the discovery in-game, click Rename, and accept — even if you keep the existing name. NMS only saves the name once you explicitly confirm it.">Name</th>
           <th>Discoverer</th>
         </tr>
       </thead>
