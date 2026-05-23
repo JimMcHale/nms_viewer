@@ -180,6 +180,21 @@ header {
 .glyph-legend { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 24px; }
 .legend-item { align-items: center; display: flex; gap: 5px; font-size: 11px; color: #506070; }
 
+/* ── EDITABLE DISCOVERY NAME ── */
+.disc-name-cell { cursor: text; }
+.disc-name-cell:hover .disc-name-text { text-decoration: underline dotted #4a8aaa; }
+.disc-name-input {
+    background: #0d1e30;
+    border: 1px solid #00d4ff;
+    color: #e0e8f0;
+    padding: 1px 4px;
+    font-size: inherit;
+    font-family: inherit;
+    width: 100%;
+    min-width: 140px;
+    outline: none;
+}
+
 @media (max-width: 680px) {
     header { gap: 8px; }
     .header-stats { margin-left: 0; }
@@ -428,13 +443,16 @@ header {
       </thead>
       <tbody>
         {% for d in discoveries %}
-        <tr>
+        <tr data-disc-id="{{ d.id }}">
           <td style="font-size:11px">{{ d.dt }}</td>
           <td>{% if d.galaxy %}<span class="gal-badge">{{ d.galaxy }}</span>{% endif %}</td>
           <td class="mono" style="text-align:right" data-val="{{ d.galaxy_num }}">{{ d.galaxy_num }}</td>
           <td class="mono" data-val="{{ d.portal_sort_key }}">{{ d.portal_hex }}</td>
           <td class="glyphs">{% for g in d.glyphs %}<span class="gi"><img src="/static/glyphs/glyph_{{ g }}.png" alt="{{ g }}"></span>{% endfor %}</td>
-          <td>{{ d.custom_name }}</td>
+          <td class="disc-name-cell">
+            <span class="disc-name-text">{{ d.user_name or d.custom_name }}</span>
+            <input class="disc-name-input" type="text" value="{{ d.user_name or d.custom_name }}" style="display:none">
+          </td>
           <td style="font-size:11px">{{ d.discoverer }}</td>
         </tr>
         {% endfor %}
@@ -561,6 +579,54 @@ function makeSortable(tableId) {
 makeSortable('summary-table');
 makeSortable('bases-table');
 makeSortable('disc-table');
+
+// ── INLINE DISCOVERY NAME EDITOR ──
+(function() {
+  document.querySelectorAll('.disc-name-cell').forEach(cell => {
+    const discId  = parseInt(cell.closest('tr').dataset.discId);
+    const textEl  = cell.querySelector('.disc-name-text');
+    const input   = cell.querySelector('.disc-name-input');
+    let saving = false;
+
+    cell.addEventListener('click', () => {
+      if (input.style.display !== 'none') return;
+      textEl.style.display = 'none';
+      input.style.display  = '';
+      input.focus();
+      input.select();
+    });
+
+    async function save() {
+      if (saving) return;
+      saving = true;
+      const name = input.value.trim();
+      try {
+        const res  = await fetch('/api/discovery/name', {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body:    JSON.stringify({ id: discId, name }),
+        });
+        const data = await res.json();
+        if (data.ok) textEl.textContent = name;
+      } catch (_) {}
+      input.style.display = 'none';
+      textEl.style.display = '';
+      saving = false;
+    }
+
+    function cancel() {
+      input.value          = textEl.textContent;
+      input.style.display  = 'none';
+      textEl.style.display = '';
+    }
+
+    input.addEventListener('keydown', e => {
+      if (e.key === 'Enter')  { e.preventDefault(); save(); }
+      if (e.key === 'Escape') { e.preventDefault(); cancel(); }
+    });
+    input.addEventListener('blur', save);
+  });
+})();
 </script>
 </body>
 </html>

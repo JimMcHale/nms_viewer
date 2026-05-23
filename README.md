@@ -28,7 +28,7 @@ imports/2026-05-22.json
 
 Files without a date prefix are sorted by their modification time on disk and loaded after any dated files that predate them.
 
-All files in `imports/` are merged on each load. Duplicate records across files are deduplicated — if the same discovery appears in multiple exports, the version with the most data (name, discoverer) is kept.
+All files in `imports/` are merged into a local SQLite database (`nms_viewer.db`). Each file is only parsed once — on subsequent runs, files whose modification time hasn't changed are skipped and their data is read directly from the database. If a discovery appears in multiple exports, the version with the most data (name, discoverer) is kept.
 
 ## Running the app
 
@@ -38,16 +38,15 @@ uv run nms_viewer.py
 
 Then open **http://localhost:5000** in your browser. (If port 5000 is in use the app will pick another — check the terminal output.)
 
-On startup the console prints a summary for each file loaded, followed by overall totals:
+On startup the console shows each file's status. Already-processed files are skipped instantly; new or changed files are parsed and written to the database:
 
 ```
---- 2026-05-16.json ---
-  Bases: 12  Planets: 97  Sectors: 18  Solar Systems: 45
-  NEW Planet: Ayphos Sigma | 1024 AB23 456C | Euclid | JimMcHale
+--- 2026-05-16.json [cached] ---
 
 --- 2026-05-22.json ---
   Bases: 14  Planets: 102  Sectors: 19  Solar Systems: 47
-  UPDATED SolarSystem: 1024 AB23 456C  name: '' -> 'New Lennox'  discoverer: '' -> 'JimMcHale'
+  NEW Planet: Ayphos Sigma | 1024 AB23 456C | Euclid | ReadyFireAim
+  UPDATED SolarSystem: New Lennox | 1024 AB23 456C | Euclid
 
 === TOTALS ===
   Bases: 14  Planets: 102  Sectors: 19  Solar Systems: 47
@@ -70,7 +69,7 @@ On startup the console prints a summary for each file loaded, followed by overal
 - Types: Planet, Sector, SolarSystem, Animal, Flora, Mineral
 - Defaults to showing **Planets only** — use the type checkboxes to add or remove types
 - Text filter searches across name, discoverer, galaxy, and portal address
-- **Name column**: a name only appears here if you have explicitly saved it in-game. To save a name without changing it, open the discovery, click **Rename**, and accept. NMS only writes the name to the save once you confirm it.
+- **Name column**: click any name cell to edit it. Type a name and press Enter (or click away) to save it to the local database — this persists across reloads independently of the game save. Press Escape to cancel. A name from the game save appears automatically if you have confirmed it in-game (open the discovery, click **Rename**, accept).
 
 ## Portal address format
 
@@ -98,12 +97,16 @@ NMS does not store procedurally generated names — it fetches them from its ser
 
 | File | Purpose |
 |------|---------|
-| `nms_viewer.py` | Flask server — loads and merges all imports, single route |
+| `nms_viewer.py` | Flask server — file processing, routes, name API |
+| `db.py` | SQLite layer — schema, upserts, queries, user-name updates |
 | `extract_nms_bases_v8.py` | Save file parser (bases, portal decoding, galaxy names) |
 | `templates/index.html` | Single-page UI (tabs, filtering, sorting, glyph rendering) |
 | `static/glyphs/glyph_0.png` … `glyph_F.png` | NMS portal glyph images |
 | `imports/` | Drop your exported JSON save files here |
+| `nms_viewer.db` | SQLite database (auto-created on first run, not in git) |
 
 ## To be added
 
-- Local SQLite database to preserve discoveries as they roll out of the save file's fixed-size buffer, so portal addresses are never lost
+- Preserve discoveries that roll out of the save file's fixed-size buffer — the database already retains them, but older entries not present in any current import will eventually need a manual review/purge workflow
+
+

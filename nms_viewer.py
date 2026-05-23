@@ -1,7 +1,8 @@
-from flask import Flask, render_template
+from flask import Flask, render_template, request, jsonify
 from pathlib import Path
 import re
 import sys
+from collections import Counter
 from datetime import datetime
 
 sys.path.insert(0, str(Path(__file__).parent))
@@ -16,15 +17,13 @@ from extract_nms_bases_v8 import (
     build_portal_fields,
     GALAXY_NAME_BY_SAVE_INDEX,
 )
-from collections import Counter
+import db
 
 app = Flask(__name__)
+db.init_db()
 
 IMPORTS_DIR = Path(__file__).parent / "imports"
 PRINT_DT = {"Planet", "Sector", "SolarSystem"}
-
-_cache = None
-_cache_file_state = None
 
 
 def fmt4(compact):
@@ -77,30 +76,23 @@ def _file_sort_key(path: Path) -> float:
     return path.stat().st_mtime
 
 
-def _file_state():
-    files = sorted(IMPORTS_DIR.glob("*.json"), key=_file_sort_key)
-    return {f: f.stat().st_mtime for f in files}
-
-
-def load_all_data():
-    global _cache, _cache_file_state
-
-    current_state = _file_state()
-    if current_state == _cache_file_state and _cache is not None:
-        return _cache
-
-    json_files = sorted(current_state.keys(), key=_file_sort_key)
+def _process_new_files():
+    json_files = sorted(IMPORTS_DIR.glob("*.json"), key=_file_sort_key)
     if not json_files:
         print("No JSON files found in imports/")
-        return {}, [], [], []
+        return
 
-    all_base_rows = []
-    seen_base_keys = set()
-    all_discoveries = []
-    seen_discovery_keys = {}  # (compact, dt) -> index in all_discoveries
-    system_galaxy = {}
+    # Seed system→galaxy from already-indexed bases so new files resolve correctly.
+    system_galaxy = db.get_system_galaxy()
+    any_new = False
 
     for json_path in json_files:
+        mtime = json_path.stat().st_mtime
+        if not db.needs_loading(json_path.name, mtime):
+            print(f"\n--- {json_path.name} [cached] ---")
+            continue
+
+        any_new = True
         print(f"\n--- {json_path.name} ---")
         data = load_json_with_backslash_fix(json_path)
 
@@ -114,11 +106,27 @@ def load_all_data():
             if None not in coord_key:
                 system_galaxy[coord_key] = row["Galaxy Number (Save)"]
 
+        file_base_count = 0
         for row in rows:
-            key = row.get("Glyph String (No Spaces)")
-            if key and key != "0" * 12 and key not in seen_base_keys:
-                seen_base_keys.add(key)
-                all_base_rows.append(row)
+            compact = row["Glyph String (No Spaces)"]
+            if not row["Base Name"] or compact == "0" * 12:
+                continue
+            base = {
+                "galaxy": row["Galaxy"],
+                "galaxy_num": row["Galaxy Number (Human)"],
+                "galaxy_save_idx": row["Galaxy Number (Save)"],
+                "name": row["Base Name"],
+                "portal_hex": fmt4(compact),
+                "portal_sort_key": portal_sort_key(compact),
+                "glyphs": list(compact),
+                "favourite": row["IsFavourite"],
+                "voxel_x": row["VoxelX"],
+                "voxel_y": row["VoxelY"],
+                "voxel_z": row["VoxelZ"],
+                "system_index": row["SystemIndex"],
+            }
+            db.upsert_base(compact, base, json_path.name)
+            file_base_count += 1
 
         discovery_records = (
             data.get("DiscoveryManagerData", {})
@@ -127,10 +135,6 @@ def load_all_data():
                 .get("Record", [])
         )
 
-        file_base_count = sum(
-            1 for row in rows
-            if row["Base Name"] and row["Glyph String (No Spaces)"] != "0" * 12
-        )
         file_dt_counts = Counter(
             rec.get("DD", {}).get("DT", "") for rec in discovery_records
         )
@@ -163,7 +167,7 @@ def load_all_data():
                     gal_idx = 0
 
             gal_name, gal_num = galaxy_label(gal_idx)
-            new_rec = {
+            disc = {
                 "dt": dt,
                 "galaxy": gal_name,
                 "galaxy_num": gal_num,
@@ -173,83 +177,47 @@ def load_all_data():
                 "custom_name": dm.get("CN", ""),
                 "discoverer": ows.get("USN", ""),
             }
-            new_score = sum(bool(v) for v in (new_rec["custom_name"], new_rec["discoverer"]))
 
-            dedup_key = (compact, dt)
-            if dedup_key in seen_discovery_keys:
-                idx = seen_discovery_keys[dedup_key]
-                existing = all_discoveries[idx]
-                existing_score = sum(bool(v) for v in (existing["custom_name"], existing["discoverer"]))
-                if new_score > existing_score:
-                    print(
-                        f"  UPDATED {dt}: {fmt4(compact)}"
-                        f" name: {existing['custom_name']!r} -> {new_rec['custom_name']!r}"
-                        f" discoverer: {existing['discoverer']!r} -> {new_rec['discoverer']!r}"
-                    )
-                    all_discoveries[idx] = new_rec
-                continue
+            result = db.upsert_discovery(compact, disc, json_path.name)
 
-            seen_discovery_keys[dedup_key] = len(all_discoveries)
-            all_discoveries.append(new_rec)
+            if result == "inserted" and dt in PRINT_DT:
+                cn = disc["custom_name"] or "(unnamed)"
+                dis = disc["discoverer"] or "unknown"
+                print(f"  NEW {dt}: {cn} | {fmt4(compact)} | {gal_name} | {dis}")
+            elif result == "updated":
+                cn = disc["custom_name"] or "(unnamed)"
+                print(f"  UPDATED {dt}: {cn} | {fmt4(compact)} | {gal_name}")
 
-            if dt in PRINT_DT:
-                custom_name = new_rec["custom_name"] or "(unnamed)"
-                discoverer = new_rec["discoverer"] or "unknown"
-                print(f"  NEW {dt}: {custom_name} | {fmt4(compact)} | {gal_name} | {discoverer}")
+        db.mark_loaded(json_path.name, mtime)
 
-    galaxy_counter = Counter(
-        (row["Galaxy Number (Save)"], row["Galaxy"], row["Galaxy Number (Human)"])
-        for row in all_base_rows
-    )
-    galaxy_summary = sorted(
-        [
-            {"name": name, "num": human_num, "count": galaxy_counter[(sn, name, human_num)]}
-            for (sn, name, human_num) in galaxy_counter
-        ],
-        key=lambda x: x["num"],
-    )
-
-    bases = []
-    for row in all_base_rows:
-        compact = row["Glyph String (No Spaces)"]
-        if not row["Base Name"] or compact == "0" * 12:
-            continue
-        bases.append(
-            {
-                "galaxy": row["Galaxy"],
-                "galaxy_num": row["Galaxy Number (Human)"],
-                "name": row["Base Name"],
-                "portal_hex": fmt4(compact),
-                "portal_sort_key": portal_sort_key(compact),
-                "glyphs": list(compact),
-                "favourite": row["IsFavourite"],
-            }
+    if any_new:
+        all_bases = db.get_bases()
+        all_disc = db.get_discoveries()
+        dt_totals = Counter(d["dt"] for d in all_disc)
+        solar = [d for d in all_disc if d["dt"] == "SolarSystem"]
+        named = sum(1 for d in solar if d["user_name"] or d["custom_name"])
+        print(
+            f"\n=== TOTALS ==="
+            f"\n  Bases: {len(all_bases)}"
+            f"  Planets: {dt_totals['Planet']}"
+            f"  Sectors: {dt_totals['Sector']}"
+            f"  Solar Systems: {dt_totals['SolarSystem']}"
+            f"\n  Named systems: {named}  Unnamed systems: {len(solar) - named}"
         )
 
+
+def load_all_data():
+    _process_new_files()
+    bases = db.get_bases()
+    discoveries = db.get_discoveries()
+    galaxy_summary = db.get_galaxy_summary(bases)
     stats = {
         "total_bases": len(bases),
         "favourites": sum(1 for b in bases if b["favourite"]),
         "galaxies": len(galaxy_summary),
-        "discoveries": len(all_discoveries),
+        "discoveries": len(discoveries),
     }
-
-    dt_totals = Counter(d["dt"] for d in all_discoveries)
-    solar_systems = [d for d in all_discoveries if d["dt"] == "SolarSystem"]
-    named_systems = sum(1 for d in solar_systems if d["custom_name"])
-    unnamed_systems = len(solar_systems) - named_systems
-    print(
-        f"\n=== TOTALS ==="
-        f"\n  Bases: {len(bases)}"
-        f"  Planets: {dt_totals['Planet']}"
-        f"  Sectors: {dt_totals['Sector']}"
-        f"  Solar Systems: {dt_totals['SolarSystem']}"
-        f"\n  Named systems: {named_systems}  Unnamed systems: {unnamed_systems}"
-    )
-
-    result = stats, galaxy_summary, bases, all_discoveries
-    _cache = result
-    _cache_file_state = current_state
-    return result
+    return stats, galaxy_summary, bases, discoveries
 
 
 @app.route("/")
@@ -262,6 +230,17 @@ def index():
         bases=bases,
         discoveries=discoveries,
     )
+
+
+@app.route("/api/discovery/name", methods=["POST"])
+def api_set_name():
+    data = request.get_json(force=True)
+    disc_id = data.get("id")
+    name = data.get("name", "")
+    if not isinstance(disc_id, int):
+        return jsonify({"ok": False, "error": "invalid id"}), 400
+    ok = db.update_user_name(disc_id, name)
+    return jsonify({"ok": ok})
 
 
 if __name__ == "__main__":
