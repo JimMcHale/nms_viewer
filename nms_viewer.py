@@ -243,5 +243,27 @@ def api_set_name():
     return jsonify({"ok": ok})
 
 
+@app.route("/api/discovery/notes", methods=["POST"])
+def api_set_discovery_notes():
+    data = request.get_json(force=True)
+    disc_id = data.get("id")
+    notes = data.get("notes", "")
+    if not isinstance(disc_id, int):
+        return jsonify({"ok": False, "error": "invalid id"}), 400
+    ok = db.update_discovery_notes(disc_id, notes)
+    return jsonify({"ok": ok})
+
+
+@app.route("/api/base/notes", methods=["POST"])
+def api_set_base_notes():
+    data = request.get_json(force=True)
+    compact = data.get("compact")
+    notes = data.get("notes", "")
+    if not isinstance(compact, str) or not compact:
+        return jsonify({"ok": False, "error": "invalid compact"}), 400
+    ok = db.update_base_notes(compact, notes)
+    return jsonify({"ok": ok})
+
+
 if __name__ == "__main__":
     app.run(debug=True, port=5000)

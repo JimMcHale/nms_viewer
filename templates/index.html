@@ -195,6 +195,32 @@ header {
     outline: none;
 }
 
+/* ── NOTES CELL ── */
+.notes-cell { cursor: text; min-width: 120px; }
+.notes-cell:hover .notes-text { text-decoration: underline dotted #4a8aaa; }
+.notes-text {
+    color: #5a8888;
+    font-style: italic;
+    font-size: 12px;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+.notes-text:empty::before { content: '+ note'; color: #2a4848; font-style: italic; }
+.notes-input {
+    background: #0d1e30;
+    border: 1px solid #00d4ff;
+    color: #e0e8f0;
+    padding: 3px 6px;
+    font-size: 12px;
+    font-family: inherit;
+    width: 100%;
+    min-width: 160px;
+    min-height: 52px;
+    outline: none;
+    resize: vertical;
+    display: block;
+}
+
 @media (max-width: 680px) {
     header { gap: 8px; }
     .header-stats { margin-left: 0; }
@@ -420,9 +446,9 @@ header {
            placeholder="Filter by name, discoverer, galaxy, or portal address…" style="flex:1;min-width:200px"/>
     <span class="filter-count" id="disc-count">{{ discoveries|length }} discoveries</span>
     <div id="disc-type-filters" style="display:flex;gap:10px;flex-wrap:wrap;width:100%;padding-top:4px;">
-      {% for dt in ['Animal','Flora','Mineral','Planet','Sector','SolarSystem'] %}
+      {% for dt in ['Animal','Base','Flora','Mineral','Planet','Sector','SolarSystem'] %}
       <label style="display:flex;align-items:center;gap:4px;font-size:11px;color:#80b0c8;cursor:pointer;text-transform:uppercase;letter-spacing:.06em;">
-        <input type="checkbox" class="disc-type-cb" data-type="{{ dt }}" {% if dt == 'SolarSystem' %}checked{% endif %} style="accent-color:#00d4ff;">
+        <input type="checkbox" class="disc-type-cb" data-type="{{ dt }}" {% if dt in ['Base','SolarSystem'] %}checked{% endif %} style="accent-color:#00d4ff;">
         {{ dt }}
       </label>
       {% endfor %}
@@ -439,11 +465,12 @@ header {
           <th>Glyphs</th>
           <th title="To make a name appear here, open the discovery in-game, click Rename, and accept — even if you keep the existing name. NMS only saves the name once you explicitly confirm it.">Name</th>
           <th>Discoverer</th>
+          <th>Notes</th>
         </tr>
       </thead>
       <tbody>
         {% for d in discoveries %}
-        <tr data-disc-id="{{ d.id }}">
+        <tr data-disc-id="{{ d.id }}" data-row-type="disc">
           <td style="font-size:11px">{{ d.dt }}</td>
           <td>{% if d.galaxy %}<span class="gal-badge">{{ d.galaxy }}</span>{% endif %}</td>
           <td class="mono" style="text-align:right" data-val="{{ d.galaxy_num }}">{{ d.galaxy_num }}</td>
@@ -454,6 +481,25 @@ header {
             <input class="disc-name-input" type="text" value="{{ d.user_name or d.custom_name }}" style="display:none">
           </td>
           <td style="font-size:11px">{{ d.discoverer }}</td>
+          <td class="notes-cell" data-notes-url="/api/discovery/notes" data-notes-key="{{ d.id }}">
+            <span class="notes-text">{{ d.notes }}</span>
+            <textarea class="notes-input" style="display:none">{{ d.notes }}</textarea>
+          </td>
+        </tr>
+        {% endfor %}
+        {% for b in bases %}
+        <tr data-row-type="base">
+          <td style="font-size:11px">Base</td>
+          <td>{% if b.galaxy %}<span class="gal-badge">{{ b.galaxy }}</span>{% endif %}</td>
+          <td class="mono" style="text-align:right" data-val="{{ b.galaxy_num }}">{{ b.galaxy_num }}</td>
+          <td class="mono" data-val="{{ b.portal_sort_key }}">{{ b.portal_hex }}</td>
+          <td class="glyphs">{% for g in b.glyphs %}<span class="gi"><img src="/static/glyphs/glyph_{{ g }}.png" alt="{{ g }}"></span>{% endfor %}</td>
+          <td>{% if b.favourite %}<span class="fav-star">&#9733;</span>{% endif %}{{ b.name }}</td>
+          <td style="font-size:11px"></td>
+          <td class="notes-cell" data-notes-url="/api/base/notes" data-notes-key="{{ b.portal_compact }}">
+            <span class="notes-text">{{ b.notes }}</span>
+            <textarea class="notes-input" style="display:none">{{ b.notes }}</textarea>
+          </td>
         </tr>
         {% endfor %}
       </tbody>
@@ -625,6 +671,55 @@ makeSortable('disc-table');
       if (e.key === 'Escape') { e.preventDefault(); cancel(); }
     });
     input.addEventListener('blur', save);
+  });
+})();
+
+// ── INLINE NOTES EDITOR ──
+(function() {
+  document.querySelectorAll('.notes-cell').forEach(cell => {
+    const url      = cell.dataset.notesUrl;
+    const key      = cell.dataset.notesKey;
+    const textEl   = cell.querySelector('.notes-text');
+    const textarea = cell.querySelector('.notes-input');
+    let saving = false;
+
+    cell.addEventListener('click', () => {
+      if (textarea.style.display !== 'none') return;
+      textEl.style.display  = 'none';
+      textarea.style.display = '';
+      textarea.focus();
+    });
+
+    async function save() {
+      if (saving) return;
+      saving = true;
+      const notes = textarea.value.trim();
+      const body  = url.includes('/base/') ? { compact: key, notes } : { id: parseInt(key), notes };
+      try {
+        const res  = await fetch(url, {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body:    JSON.stringify(body),
+        });
+        const data = await res.json();
+        if (data.ok) textEl.textContent = notes;
+      } catch (_) {}
+      textarea.style.display = 'none';
+      textEl.style.display   = '';
+      saving = false;
+    }
+
+    function cancel() {
+      textarea.value         = textEl.textContent;
+      textarea.style.display = 'none';
+      textEl.style.display   = '';
+    }
+
+    textarea.addEventListener('keydown', e => {
+      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); save(); }
+      if (e.key === 'Escape') { e.preventDefault(); cancel(); }
+    });
+    textarea.addEventListener('blur', save);
   });
 })();
 </script>

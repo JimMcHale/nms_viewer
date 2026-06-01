@@ -54,6 +54,11 @@ def init_db():
                 UNIQUE(portal_compact, dt)
             );
         """)
+        for table in ("bases", "discoveries"):
+            try:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN notes TEXT DEFAULT ''")
+            except Exception:
+                pass
 
 
 def needs_loading(filename: str, mtime: float) -> bool:
@@ -161,6 +166,7 @@ def get_bases() -> list:
         rows = conn.execute("SELECT * FROM bases ORDER BY galaxy_num, name").fetchall()
         return [
             {
+                "portal_compact": r["portal_compact"],
                 "galaxy": r["galaxy"],
                 "galaxy_num": r["galaxy_num"],
                 "name": r["name"],
@@ -168,6 +174,7 @@ def get_bases() -> list:
                 "portal_sort_key": r["portal_sort_key"],
                 "glyphs": json.loads(r["glyphs"]),
                 "favourite": bool(r["favourite"]),
+                "notes": r["notes"] or "",
             }
             for r in rows
         ]
@@ -198,6 +205,7 @@ def get_discoveries() -> list:
                 "custom_name": r["custom_name"] or "",
                 "user_name": r["user_name"] or "",
                 "discoverer": r["discoverer"] or "",
+                "notes": r["notes"] or "",
             }
             for r in rows
         ]
@@ -208,5 +216,23 @@ def update_user_name(discovery_id: int, name: str) -> bool:
         cur = conn.execute(
             "UPDATE discoveries SET user_name = ? WHERE id = ?",
             (name.strip(), discovery_id),
+        )
+        return cur.rowcount > 0
+
+
+def update_discovery_notes(discovery_id: int, notes: str) -> bool:
+    with _conn() as conn:
+        cur = conn.execute(
+            "UPDATE discoveries SET notes = ? WHERE id = ?",
+            (notes.strip(), discovery_id),
+        )
+        return cur.rowcount > 0
+
+
+def update_base_notes(portal_compact: str, notes: str) -> bool:
+    with _conn() as conn:
+        cur = conn.execute(
+            "UPDATE bases SET notes = ? WHERE portal_compact = ?",
+            (notes.strip(), portal_compact),
         )
         return cur.rowcount > 0

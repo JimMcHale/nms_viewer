@@ -1,10 +1,9 @@
-import json
-import csv
 import argparse
+import csv
+import json
 import math
 from collections import Counter, defaultdict
 from pathlib import Path
-
 
 # Your authoritative galaxy list, HUMAN numbering (1-based).
 GALAXY_NAME_BY_HUMAN_NUMBER = {
@@ -268,8 +267,7 @@ GALAXY_NAME_BY_HUMAN_NUMBER = {
 
 # Convert human numbering to save numbering
 GALAXY_NAME_BY_SAVE_INDEX = {
-    human_num - 1: name
-    for human_num, name in GALAXY_NAME_BY_HUMAN_NUMBER.items()
+    human_num - 1: name for human_num, name in GALAXY_NAME_BY_HUMAN_NUMBER.items()
 }
 
 # Glyph name mapping keyed by the portal hex digit.
@@ -336,8 +334,10 @@ def load_json_with_backslash_fix(path: Path):
                     repaired_chars.append("\\")
                     repaired_chars.append(ch)
                 elif ch == "u":
-                    hex_part = raw[i + 1:i + 5]
-                    if len(hex_part) == 4 and all(c in "0123456789abcdefABCDEF" for c in hex_part):
+                    hex_part = raw[i + 1 : i + 5]
+                    if len(hex_part) == 4 and all(
+                        c in "0123456789abcdefABCDEF" for c in hex_part
+                    ):
                         repaired_chars.append("\\")
                         repaired_chars.append("u")
                     else:
@@ -419,7 +419,6 @@ def build_portal_fields(planet_index, system_index, voxel_x, voxel_y, voxel_z):
     }
 
 
-
 def decode_packed_galactic_address(value):
     """
     Decode the packed 64-bit GalacticAddress used in PersistentPlayerBases.
@@ -432,7 +431,11 @@ def decode_packed_galactic_address(value):
         if text.lower().startswith("0x"):
             value = int(text, 16)
         else:
-            value = int(text, 16) if all(c in "0123456789abcdefABCDEF" for c in text) else int(text)
+            value = (
+                int(text, 16)
+                if all(c in "0123456789abcdefABCDEF" for c in text)
+                else int(text)
+            )
 
     return {
         "VoxelX": (value >> 0) & 0xFFF,
@@ -557,7 +560,9 @@ def build_base_computer_lookup(data):
 
         lookup[key] = {
             "computer_world_pos": computer_world_pos,
-            "computer_coordinates": format_planetary_coordinates_from_world_position(computer_world_pos),
+            "computer_coordinates": format_planetary_coordinates_from_world_position(
+                computer_world_pos
+            ),
         }
 
     return lookup
@@ -597,7 +602,9 @@ def extract_base_rows(data):
         lookup_key = (voxel_x, voxel_y, voxel_z, system_index, planet_index)
         computer_info = base_computer_lookup.get(lookup_key, {})
         computer_coordinates = computer_info.get("computer_coordinates", "")
-        teleporter_coordinates = format_planetary_coordinates_from_world_position(node.get("Position"))
+        teleporter_coordinates = format_planetary_coordinates_from_world_position(
+            node.get("Position")
+        )
 
         row = {
             "Base Name": base_name,
@@ -641,6 +648,8 @@ def dedupe_exact_rows(rows):
         if key not in seen:
             seen.add(key)
             deduped.append(row)
+        else:
+            print(f"Already seen: {row}")
 
     return deduped
 
@@ -667,7 +676,9 @@ def sort_rows(rows):
     return sorted(
         rows,
         key=lambda r: (
-            r["Galaxy Number (Save)"] if r["Galaxy Number (Save)"] is not None else 999999,
+            r["Galaxy Number (Save)"]
+            if r["Galaxy Number (Save)"] is not None
+            else 999999,
             r["VoxelX"] if r["VoxelX"] is not None else 999999,
             r["VoxelY"] if r["VoxelY"] is not None else 999999,
             r["VoxelZ"] if r["VoxelZ"] is not None else 999999,
@@ -689,21 +700,23 @@ def write_csv(rows, output_path: Path, fieldnames):
 def build_grouped_rows(rows):
     grouped = []
     for row in rows:
-        grouped.append({
-            "Galaxy": row["Galaxy"],
-            "Galaxy Number (Human)": row["Galaxy Number (Human)"],
-            "Galaxy Number (Save)": row["Galaxy Number (Save)"],
-            "System (Coords)": row["System (Coords)"],
-            "Base Name": row["Base Name"],
-            "Planet": row["Planet"],
-            "Computer Coordinates": row["Computer Coordinates"],
-            "Teleporter Coordinates": row["Teleporter Coordinates"],
-            "Portal Hex (Grouped)": row["Portal Hex (Grouped)"],
-            "Glyph String (No Spaces)": row["Glyph String (No Spaces)"],
-            "Glyph Digits": row["Glyph Digits"],
-            "Glyph Names": row["Glyph Names"],
-            "Notes": row["Notes"],
-        })
+        grouped.append(
+            {
+                "Galaxy": row["Galaxy"],
+                "Galaxy Number (Human)": row["Galaxy Number (Human)"],
+                "Galaxy Number (Save)": row["Galaxy Number (Save)"],
+                "System (Coords)": row["System (Coords)"],
+                "Base Name": row["Base Name"],
+                "Planet": row["Planet"],
+                "Computer Coordinates": row["Computer Coordinates"],
+                "Teleporter Coordinates": row["Teleporter Coordinates"],
+                "Portal Hex (Grouped)": row["Portal Hex (Grouped)"],
+                "Glyph String (No Spaces)": row["Glyph String (No Spaces)"],
+                "Glyph Digits": row["Glyph Digits"],
+                "Glyph Names": row["Glyph Names"],
+                "Notes": row["Notes"],
+            }
+        )
     return grouped
 
 
@@ -721,33 +734,37 @@ def build_duplicate_rows(rows):
         sorted_entries = sorted(
             entries,
             key=lambda r: (
-                r["Galaxy Number (Save)"] if r["Galaxy Number (Save)"] is not None else 999999,
+                r["Galaxy Number (Save)"]
+                if r["Galaxy Number (Save)"] is not None
+                else 999999,
                 r["VoxelX"] if r["VoxelX"] is not None else 999999,
                 r["VoxelY"] if r["VoxelY"] is not None else 999999,
                 r["VoxelZ"] if r["VoxelZ"] is not None else 999999,
                 r["SystemIndex"] if r["SystemIndex"] is not None else 999999,
                 r["Planet"] if r["Planet"] is not None else 999999,
-            )
+            ),
         )
 
         for idx, entry in enumerate(sorted_entries, start=1):
-            duplicate_rows.append({
-                "Base Name": entry["Base Name"],
-                "Occurrence": idx,
-                "Total Occurrences": len(entries),
-                "Galaxy": entry["Galaxy"],
-                "Galaxy Number (Human)": entry["Galaxy Number (Human)"],
-                "Galaxy Number (Save)": entry["Galaxy Number (Save)"],
-                "System (Coords)": entry["System (Coords)"],
-                "Planet": entry["Planet"],
-                "Computer Coordinates": entry["Computer Coordinates"],
-                "Teleporter Coordinates": entry["Teleporter Coordinates"],
-                "Portal Hex (Grouped)": entry["Portal Hex (Grouped)"],
-                "Glyph String (No Spaces)": entry["Glyph String (No Spaces)"],
-                "Glyph Digits": entry["Glyph Digits"],
-                "Glyph Names": entry["Glyph Names"],
-                "Notes": entry["Notes"],
-            })
+            duplicate_rows.append(
+                {
+                    "Base Name": entry["Base Name"],
+                    "Occurrence": idx,
+                    "Total Occurrences": len(entries),
+                    "Galaxy": entry["Galaxy"],
+                    "Galaxy Number (Human)": entry["Galaxy Number (Human)"],
+                    "Galaxy Number (Save)": entry["Galaxy Number (Save)"],
+                    "System (Coords)": entry["System (Coords)"],
+                    "Planet": entry["Planet"],
+                    "Computer Coordinates": entry["Computer Coordinates"],
+                    "Teleporter Coordinates": entry["Teleporter Coordinates"],
+                    "Portal Hex (Grouped)": entry["Portal Hex (Grouped)"],
+                    "Glyph String (No Spaces)": entry["Glyph String (No Spaces)"],
+                    "Glyph Digits": entry["Glyph Digits"],
+                    "Glyph Names": entry["Glyph Names"],
+                    "Notes": entry["Notes"],
+                }
+            )
 
     return duplicate_rows
 
@@ -776,16 +793,19 @@ def write_summary(rows, summary_path: Path):
 
         f.write("Counts by galaxy:\n")
         for save_num, galaxy_name, human_num in sorted(
-            by_galaxy.keys(),
-            key=lambda x: x[0] if x[0] is not None else 999999
+            by_galaxy.keys(), key=lambda x: x[0] if x[0] is not None else 999999
         ):
             count = by_galaxy[(save_num, galaxy_name, human_num)]
             display_name = galaxy_name if galaxy_name else f"Galaxy {human_num}"
-            f.write(f"  {display_name} | Human {human_num} | Save {save_num}: {count}\n")
+            f.write(
+                f"  {display_name} | Human {human_num} | Save {save_num}: {count}\n"
+            )
 
         f.write("\nRepeated base names:\n")
         any_repeats = False
-        for base_name, count in sorted(by_name.items(), key=lambda kv: (-kv[1], kv[0].lower())):
+        for base_name, count in sorted(
+            by_name.items(), key=lambda kv: (-kv[1], kv[0].lower())
+        ):
             if count > 1:
                 any_repeats = True
                 f.write(f"  {base_name}: {count}\n")
