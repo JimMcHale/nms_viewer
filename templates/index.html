@@ -357,6 +357,7 @@ header {
     <span class="stat-pill">&#9733; {{ stats.favourites }} Favourites</span>
     <span class="stat-pill">{{ stats.galaxies }} Galaxies</span>
     <span class="stat-pill">{{ stats.discoveries }} Discoveries</span>
+    <button id="reload-btn" class="stat-pill" style="cursor:pointer;background:rgba(0,180,220,.15);border:1px solid rgba(0,180,220,.4);">&#8635; Reload Files</button>
   </div>
 </header>
 
@@ -417,6 +418,7 @@ header {
     <table class="data-table" id="bases-table">
       <thead>
         <tr>
+          <th title="Sort favourites to top">&#9733;</th>
           <th>Galaxy</th>
           <th style="text-align:right">#</th>
           <th>Base Name</th>
@@ -426,10 +428,14 @@ header {
       </thead>
       <tbody>
         {% for b in bases %}
-        <tr>
+        <tr data-base-id="{{ b.id }}">
+          <td data-val="{{ '0' if b.favourite else '1' }}" style="text-align:center">{% if b.favourite %}<span class="fav-star">&#9733;</span>{% endif %}</td>
           <td data-val="{{ b.galaxy }}"><span class="gal-badge">{{ b.galaxy }}</span></td>
           <td class="mono" style="text-align:right" data-val="{{ b.galaxy_num }}">{{ b.galaxy_num }}</td>
-          <td>{% if b.favourite %}<span class="fav-star">&#9733;</span>{% endif %}{{ b.name }}</td>
+          <td class="base-name-cell">
+            <span class="base-name-text">{{ b.user_name or b.name }}</span>
+            <input class="base-name-input" type="text" value="{{ b.user_name or b.name }}" style="display:none">
+          </td>
           <td class="mono" data-val="{{ b.portal_sort_key }}">{{ b.portal_hex }}</td>
           <td class="glyphs">{% for g in b.glyphs %}<span class="gi"><img src="/static/glyphs/glyph_{{ g }}.png" alt="{{ g }}"></span>{% endfor %}</td>
         </tr>
@@ -465,6 +471,7 @@ header {
           <th>Glyphs</th>
           <th title="To make a name appear here, open the discovery in-game, click Rename, and accept — even if you keep the existing name. NMS only saves the name once you explicitly confirm it.">Name</th>
           <th>Discoverer</th>
+          <th>Discovered</th>
           <th>Notes</th>
         </tr>
       </thead>
@@ -481,6 +488,7 @@ header {
             <input class="disc-name-input" type="text" value="{{ d.user_name or d.custom_name }}" style="display:none">
           </td>
           <td style="font-size:11px">{{ d.discoverer }}</td>
+          <td class="mono" style="font-size:11px" data-val="{{ d.discovered_ts or '' }}">{{ d.discovered_date }}</td>
           <td class="notes-cell" data-notes-url="/api/discovery/notes" data-notes-key="{{ d.id }}">
             <span class="notes-text">{{ d.notes }}</span>
             <textarea class="notes-input" style="display:none">{{ d.notes }}</textarea>
@@ -488,15 +496,18 @@ header {
         </tr>
         {% endfor %}
         {% for b in bases %}
-        <tr data-row-type="base">
+        <tr data-row-type="base" data-base-id="{{ b.id }}">
           <td style="font-size:11px">Base</td>
           <td>{% if b.galaxy %}<span class="gal-badge">{{ b.galaxy }}</span>{% endif %}</td>
           <td class="mono" style="text-align:right" data-val="{{ b.galaxy_num }}">{{ b.galaxy_num }}</td>
           <td class="mono" data-val="{{ b.portal_sort_key }}">{{ b.portal_hex }}</td>
           <td class="glyphs">{% for g in b.glyphs %}<span class="gi"><img src="/static/glyphs/glyph_{{ g }}.png" alt="{{ g }}"></span>{% endfor %}</td>
-          <td>{% if b.favourite %}<span class="fav-star">&#9733;</span>{% endif %}{{ b.name }}</td>
+          <td class="base-name-cell">{% if b.favourite %}<span class="fav-star">&#9733;</span>{% endif %}<span class="base-name-text">{{ b.user_name or b.name }}</span>
+            <input class="base-name-input" type="text" value="{{ b.user_name or b.name }}" style="display:none">
+          </td>
           <td style="font-size:11px"></td>
-          <td class="notes-cell" data-notes-url="/api/base/notes" data-notes-key="{{ b.portal_compact }}">
+          <td></td>
+          <td class="notes-cell" data-notes-url="/api/base/notes" data-notes-key="{{ b.id }}">
             <span class="notes-text">{{ b.notes }}</span>
             <textarea class="notes-input" style="display:none">{{ b.notes }}</textarea>
           </td>
@@ -674,6 +685,54 @@ makeSortable('disc-table');
   });
 })();
 
+// ── INLINE BASE NAME EDITOR ──
+(function() {
+  document.querySelectorAll('.base-name-cell').forEach(cell => {
+    const baseId = parseInt(cell.closest('tr').dataset.baseId);
+    const textEl  = cell.querySelector('.base-name-text');
+    const input   = cell.querySelector('.base-name-input');
+    let saving = false;
+
+    cell.addEventListener('click', () => {
+      if (input.style.display !== 'none') return;
+      textEl.style.display = 'none';
+      input.style.display  = '';
+      input.focus();
+      input.select();
+    });
+
+    async function save() {
+      if (saving) return;
+      saving = true;
+      const name = input.value.trim();
+      try {
+        const res  = await fetch('/api/base/name', {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body:    JSON.stringify({ id: baseId, name }),
+        });
+        const data = await res.json();
+        if (data.ok) textEl.textContent = name;
+      } catch (_) {}
+      input.style.display = 'none';
+      textEl.style.display = '';
+      saving = false;
+    }
+
+    function cancel() {
+      input.value          = textEl.textContent;
+      input.style.display  = 'none';
+      textEl.style.display = '';
+    }
+
+    input.addEventListener('keydown', e => {
+      if (e.key === 'Enter')  { e.preventDefault(); save(); }
+      if (e.key === 'Escape') { e.preventDefault(); cancel(); }
+    });
+    input.addEventListener('blur', save);
+  });
+})();
+
 // ── INLINE NOTES EDITOR ──
 (function() {
   document.querySelectorAll('.notes-cell').forEach(cell => {
@@ -694,7 +753,7 @@ makeSortable('disc-table');
       if (saving) return;
       saving = true;
       const notes = textarea.value.trim();
-      const body  = url.includes('/base/') ? { compact: key, notes } : { id: parseInt(key), notes };
+      const body  = { id: parseInt(key), notes };
       try {
         const res  = await fetch(url, {
           method:  'POST',
@@ -722,6 +781,15 @@ makeSortable('disc-table');
     textarea.addEventListener('blur', save);
   });
 })();
+
+// ── RELOAD BUTTON ──
+document.getElementById('reload-btn').addEventListener('click', async () => {
+  const btn = document.getElementById('reload-btn');
+  btn.textContent = 'Reloading…';
+  btn.disabled = true;
+  await fetch('/api/reload', { method: 'POST' });
+  location.reload();
+});
 </script>
 </body>
 </html>

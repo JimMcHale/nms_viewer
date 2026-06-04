@@ -66,6 +66,15 @@ def decode_ua(ua_raw):
         return None, None
 
 
+def _position_key(pos) -> str:
+    if isinstance(pos, list) and len(pos) == 3:
+        try:
+            return f"{float(pos[0]):.2f},{float(pos[1]):.2f},{float(pos[2]):.2f}"
+        except (TypeError, ValueError):
+            pass
+    return ""
+
+
 def _file_sort_key(path: Path) -> float:
     m = re.match(r"(\d{4}-\d{2}-\d{2})", path.name)
     if m:
@@ -107,15 +116,26 @@ def _process_new_files():
                 system_galaxy[coord_key] = row["Galaxy Number (Save)"]
 
         file_base_count = 0
+        skipped_bases = []
         for row in rows:
             compact = row["Glyph String (No Spaces)"]
-            if not row["Base Name"] or compact == "0" * 12:
+            name = row["Base Name"]
+            if not name:
+                skipped_bases.append(f"  SKIP (no name): coords=({row['VoxelX']},{row['VoxelY']},{row['VoxelZ']})")
+                continue
+            if not compact or compact == "0" * 12:
+                skipped_bases.append(f"  SKIP (no portal addr): {name!r}")
+                continue
+            position = _position_key(row.get("Position"))
+            if not position:
+                skipped_bases.append(f"  SKIP (no position): {name!r} | {fmt4(compact)}")
                 continue
             base = {
                 "galaxy": row["Galaxy"],
                 "galaxy_num": row["Galaxy Number (Human)"],
                 "galaxy_save_idx": row["Galaxy Number (Save)"],
-                "name": row["Base Name"],
+                "name": name,
+                "position": position,
                 "portal_hex": fmt4(compact),
                 "portal_sort_key": portal_sort_key(compact),
                 "glyphs": list(compact),
@@ -124,9 +144,13 @@ def _process_new_files():
                 "voxel_y": row["VoxelY"],
                 "voxel_z": row["VoxelZ"],
                 "system_index": row["SystemIndex"],
+                "last_update_ts": row.get("LastUpdateTimestamp"),
             }
             db.upsert_base(compact, base, json_path.name)
+            print(f"  BASE: {name!r} | {fmt4(compact)}")
             file_base_count += 1
+        for msg in skipped_bases:
+            print(msg)
 
         discovery_records = (
             data.get("DiscoveryManagerData", {})
@@ -176,6 +200,7 @@ def _process_new_files():
                 "glyphs": list(compact),
                 "custom_name": dm.get("CN", ""),
                 "discoverer": ows.get("USN", ""),
+                "discovered_ts": ows.get("TS"),
             }
 
             result = db.upsert_discovery(compact, disc, json_path.name)
@@ -254,14 +279,31 @@ def api_set_discovery_notes():
     return jsonify({"ok": ok})
 
 
+@app.route("/api/reload", methods=["POST"])
+def api_reload():
+    db.clear_loaded_files()
+    return jsonify({"ok": True})
+
+
+@app.route("/api/base/name", methods=["POST"])
+def api_set_base_name():
+    data = request.get_json(force=True)
+    base_id = data.get("id")
+    name = data.get("name", "")
+    if not isinstance(base_id, int):
+        return jsonify({"ok": False, "error": "invalid id"}), 400
+    ok = db.update_base_user_name(base_id, name)
+    return jsonify({"ok": ok})
+
+
 @app.route("/api/base/notes", methods=["POST"])
 def api_set_base_notes():
     data = request.get_json(force=True)
-    compact = data.get("compact")
+    base_id = data.get("id")
     notes = data.get("notes", "")
-    if not isinstance(compact, str) or not compact:
-        return jsonify({"ok": False, "error": "invalid compact"}), 400
-    ok = db.update_base_notes(compact, notes)
+    if not isinstance(base_id, int):
+        return jsonify({"ok": False, "error": "invalid id"}), 400
+    ok = db.update_base_notes(base_id, notes)
     return jsonify({"ok": ok})
 
 

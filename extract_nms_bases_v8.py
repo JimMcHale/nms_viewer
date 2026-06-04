@@ -568,9 +568,42 @@ def build_base_computer_lookup(data):
     return lookup
 
 
+def build_base_position_lookup(data):
+    """
+    Returns two dicts:
+      by_name:   (VoxelX, VoxelY, VoxelZ, SolarSystemIndex, PlanetIndex, name) -> (pos, ts)
+      by_coords: (VoxelX, VoxelY, VoxelZ, SolarSystemIndex, PlanetIndex)       -> [(pos, ts), ...]
+
+    Teleporter nodes carry name + galactic coords but not the base's world position.
+    PersistentPlayerBases entries carry the actual Position and LastUpdateTimestamp.
+    We match them by name+coords first; if that fails (name mismatch due to rename),
+    we fall back to coords-only when there is exactly one base on that planet.
+    """
+    by_name = {}
+    by_coords = {}
+    for base in iter_persistent_player_bases(data):
+        decoded = decode_packed_galactic_address_signed(base.get("GalacticAddress"))
+        if not decoded:
+            continue
+        name = str(base.get("Name", "")).strip()
+        pos = base.get("Position")
+        ts = base.get("LastUpdateTimestamp")
+        coords = (
+            decoded["VoxelX"],
+            decoded["VoxelY"],
+            decoded["VoxelZ"],
+            decoded["SolarSystemIndex"],
+            decoded["PlanetIndex"],
+        )
+        by_name[(*coords, name)] = (pos, ts)
+        by_coords.setdefault(coords, []).append((pos, ts))
+    return by_name, by_coords
+
+
 def extract_base_rows(data):
     rows = []
     base_computer_lookup = build_base_computer_lookup(data)
+    pos_by_name, pos_by_coords = build_base_position_lookup(data)
 
     for node in walk(data):
         if not isinstance(node, dict):
@@ -606,6 +639,13 @@ def extract_base_rows(data):
             node.get("Position")
         )
 
+        coords = (voxel_x, voxel_y, voxel_z, system_index, planet_index)
+        base_position, last_update_ts = pos_by_name.get((*coords, base_name), (None, None))
+        if base_position is None:
+            coord_matches = pos_by_coords.get(coords, [])
+            if len(coord_matches) == 1:
+                base_position, last_update_ts = coord_matches[0]
+
         row = {
             "Base Name": base_name,
             "Galaxy": galaxy_name_from_save_index(reality_index),
@@ -622,6 +662,8 @@ def extract_base_rows(data):
             "IsFeatured": bool(node.get("IsFeatured", False)),
             "System (Coords)": f"({voxel_x}, {voxel_y}, {voxel_z}) | {system_index}",
             "Notes": "",
+            "Position": base_position,
+            "LastUpdateTimestamp": last_update_ts,
             **portal_fields,
         }
         rows.append(row)
