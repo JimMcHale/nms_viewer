@@ -7,6 +7,30 @@ from datetime import datetime
 
 sys.path.insert(0, str(Path(__file__).parent))
 
+# ── Logging setup ──
+# Tee stdout/stderr to a timestamped file in logs/; Flask's reloader spawns a
+# child process (WERKZEUG_RUN_MAIN=true) — only open the log file there to
+# avoid creating two files per run.
+import os as _os
+if _os.environ.get("WERKZEUG_RUN_MAIN") == "true" or not _os.environ.get("WERKZEUG_RUN_MAIN"):
+    _logs_dir = Path(__file__).parent / "logs"
+    _logs_dir.mkdir(exist_ok=True)
+    _log_path = _logs_dir / datetime.now().strftime("%Y-%m-%d_%H%M%S.log")
+    _log_file = open(_log_path, "w", encoding="utf-8", buffering=1)
+
+    class _Tee:
+        def __init__(self, *streams):
+            self._streams = streams
+        def write(self, data):
+            for s in self._streams:
+                s.write(data)
+        def flush(self):
+            for s in self._streams:
+                s.flush()
+
+    sys.stdout = _Tee(sys.__stdout__, _log_file)
+    sys.stderr = _Tee(sys.__stderr__, _log_file)
+
 from extract_nms_bases_v8 import (
     load_json_with_backslash_fix,
     extract_base_rows,
@@ -15,6 +39,9 @@ from extract_nms_bases_v8 import (
     sort_rows,
     decode_packed_galactic_address_signed,
     build_portal_fields,
+    iter_persistent_player_bases,
+    galaxy_name_from_save_index,
+    human_number_from_save_index,
     GALAXY_NAME_BY_SAVE_INDEX,
 )
 import db
@@ -86,7 +113,10 @@ def _file_sort_key(path: Path) -> float:
 
 
 def _process_new_files():
-    json_files = sorted(IMPORTS_DIR.glob("*.json"), key=_file_sort_key)
+    json_files = sorted(
+        [f for f in IMPORTS_DIR.iterdir() if f.suffix.lower() == ".json"],
+        key=_file_sort_key,
+    )
     if not json_files:
         print("No JSON files found in imports/")
         return
@@ -130,6 +160,9 @@ def _process_new_files():
             if not position:
                 skipped_bases.append(f"  SKIP (no position): {name!r} | {fmt4(compact)}")
                 continue
+            owner_uid = row.get("OwnerUID", "") or ""
+            owner_usn = row.get("OwnerUSN", "") or ""
+            db.upsert_player(owner_uid, owner_usn)
             base = {
                 "galaxy": row["Galaxy"],
                 "galaxy_num": row["Galaxy Number (Human)"],
@@ -145,12 +178,80 @@ def _process_new_files():
                 "voxel_z": row["VoxelZ"],
                 "system_index": row["SystemIndex"],
                 "last_update_ts": row.get("LastUpdateTimestamp"),
+                "base_type": row.get("BaseType", ""),
+                "owner_uid": owner_uid,
+                "owner": owner_usn,
             }
-            db.upsert_base(compact, base, json_path.name)
-            print(f"  BASE: {name!r} | {fmt4(compact)}")
+            result = db.upsert_base(compact, base, json_path.name)
+            tag = "NEW" if result == "inserted" else "UPD"
+            print(f"  BASE [{tag}]: {name!r} | {fmt4(compact)}")
             file_base_count += 1
         for msg in skipped_bases:
             print(msg)
+
+        # Second pass: pick up bases that exist in PersistentPlayerBases but have no
+        # teleporter node (e.g. base computer placed but no teleporter built yet).
+        teleporter_keys = {
+            (row["VoxelX"], row["VoxelY"], row["VoxelZ"], row["SystemIndex"], row["Planet"], row["Base Name"])
+            for row in rows
+        }
+        for base in iter_persistent_player_bases(data):
+            name = str(base.get("Name", "")).strip()
+            if not name:
+                continue
+            decoded = decode_packed_galactic_address_signed(base.get("GalacticAddress"))
+            if not decoded:
+                continue
+            vx = decoded["VoxelX"]
+            vy = decoded["VoxelY"]
+            vz = decoded["VoxelZ"]
+            si = decoded["SolarSystemIndex"]
+            pi = decoded["PlanetIndex"]
+            if (vx, vy, vz, si, pi, name) in teleporter_keys:
+                continue  # already handled by teleporter walk
+            portal_fields = build_portal_fields(
+                planet_index=pi, system_index=si,
+                voxel_x=vx, voxel_y=vy, voxel_z=vz,
+            )
+            compact = portal_fields.get("Glyph String (No Spaces)", "")
+            if not compact or compact == "0" * 12:
+                print(f"  SKIP (no portal addr, no-teleporter base): {name!r}")
+                continue
+            position = _position_key(base.get("Position"))
+            if not position:
+                print(f"  SKIP (no position, no-teleporter base): {name!r} | {fmt4(compact)}")
+                continue
+            gal_save_idx = system_galaxy.get((vx, vy, vz, si), 0)
+            gal_name = galaxy_name_from_save_index(gal_save_idx)
+            gal_num = human_number_from_save_index(gal_save_idx)
+            system_galaxy[(vx, vy, vz, si)] = gal_save_idx
+            base_owner = base.get("Owner") or {}
+            base_owner_uid = str(base_owner.get("UID", "") or "")
+            base_owner_usn = str(base_owner.get("USN", "") or "")
+            db.upsert_player(base_owner_uid, base_owner_usn)
+            base_dict = {
+                "galaxy": gal_name,
+                "galaxy_num": gal_num,
+                "galaxy_save_idx": gal_save_idx,
+                "name": name,
+                "position": position,
+                "portal_hex": fmt4(compact),
+                "portal_sort_key": portal_sort_key(compact),
+                "glyphs": list(compact),
+                "favourite": bool(base.get("IsFavourite", False)),
+                "voxel_x": vx,
+                "voxel_y": vy,
+                "voxel_z": vz,
+                "system_index": si,
+                "last_update_ts": base.get("LastUpdateTimestamp"),
+                "base_type": (base.get("BaseType") or {}).get("PersistentBaseTypes", ""),
+                "owner_uid": base_owner_uid,
+                "owner": base_owner_usn,
+            }
+            result = db.upsert_base(compact, base_dict, json_path.name)
+            tag = "NEW" if result == "inserted" else "UPD"
+            print(f"  BASE [{tag}] (no teleporter): {name!r} | {fmt4(compact)}")
+            file_base_count += 1
 
         discovery_records = (
             data.get("DiscoveryManagerData", {})
@@ -191,6 +292,8 @@ def _process_new_files():
                     gal_idx = 0
 
             gal_name, gal_num = galaxy_label(gal_idx)
+            discoverer_uid = str(ows.get("UID", "") or "")
+            db.upsert_player(discoverer_uid, str(ows.get("USN", "") or ""))
             disc = {
                 "dt": dt,
                 "galaxy": gal_name,
@@ -200,6 +303,7 @@ def _process_new_files():
                 "glyphs": list(compact),
                 "custom_name": dm.get("CN", ""),
                 "discoverer": ows.get("USN", ""),
+                "discoverer_uid": discoverer_uid,
                 "discovered_ts": ows.get("TS"),
             }
 

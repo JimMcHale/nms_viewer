@@ -315,11 +315,8 @@ def load_json_with_backslash_fix(path: Path):
 
     try:
         return json.loads(raw)
-    except json.JSONDecodeError as e:
-        print("Standard JSON parse failed.")
-        print(f"Reason: {e}")
-        print("Attempting automatic repair of invalid backslashes inside strings...")
-
+    except json.JSONDecodeError:
+        pass
     repaired_chars = []
     in_string = False
     escape = False
@@ -571,8 +568,8 @@ def build_base_computer_lookup(data):
 def build_base_position_lookup(data):
     """
     Returns two dicts:
-      by_name:   (VoxelX, VoxelY, VoxelZ, SolarSystemIndex, PlanetIndex, name) -> (pos, ts)
-      by_coords: (VoxelX, VoxelY, VoxelZ, SolarSystemIndex, PlanetIndex)       -> [(pos, ts), ...]
+      by_name:   (VoxelX, VoxelY, VoxelZ, SolarSystemIndex, PlanetIndex, name) -> (pos, ts, uid, usn)
+      by_coords: (VoxelX, VoxelY, VoxelZ, SolarSystemIndex, PlanetIndex)       -> [(pos, ts, uid, usn), ...]
 
     Teleporter nodes carry name + galactic coords but not the base's world position.
     PersistentPlayerBases entries carry the actual Position and LastUpdateTimestamp.
@@ -588,6 +585,9 @@ def build_base_position_lookup(data):
         name = str(base.get("Name", "")).strip()
         pos = base.get("Position")
         ts = base.get("LastUpdateTimestamp")
+        owner = base.get("Owner") or {}
+        uid = str(owner.get("UID", "") or "")
+        usn = str(owner.get("USN", "") or "")
         coords = (
             decoded["VoxelX"],
             decoded["VoxelY"],
@@ -595,8 +595,8 @@ def build_base_position_lookup(data):
             decoded["SolarSystemIndex"],
             decoded["PlanetIndex"],
         )
-        by_name[(*coords, name)] = (pos, ts)
-        by_coords.setdefault(coords, []).append((pos, ts))
+        by_name[(*coords, name)] = (pos, ts, uid, usn)
+        by_coords.setdefault(coords, []).append((pos, ts, uid, usn))
     return by_name, by_coords
 
 
@@ -640,11 +640,15 @@ def extract_base_rows(data):
         )
 
         coords = (voxel_x, voxel_y, voxel_z, system_index, planet_index)
-        base_position, last_update_ts = pos_by_name.get((*coords, base_name), (None, None))
+        pos_info = pos_by_name.get((*coords, base_name))
+        if pos_info:
+            base_position, last_update_ts, owner_uid, owner_usn = pos_info
+        else:
+            base_position, last_update_ts, owner_uid, owner_usn = None, None, "", ""
         if base_position is None:
             coord_matches = pos_by_coords.get(coords, [])
             if len(coord_matches) == 1:
-                base_position, last_update_ts = coord_matches[0]
+                base_position, last_update_ts, owner_uid, owner_usn = coord_matches[0]
 
         row = {
             "Base Name": base_name,
@@ -664,6 +668,9 @@ def extract_base_rows(data):
             "Notes": "",
             "Position": base_position,
             "LastUpdateTimestamp": last_update_ts,
+            "BaseType": (node.get("BaseType") or {}).get("PersistentBaseTypes", ""),
+            "OwnerUID": owner_uid,
+            "OwnerUSN": owner_usn,
             **portal_fields,
         }
         rows.append(row)

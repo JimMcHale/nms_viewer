@@ -412,6 +412,9 @@ header {
   <div class="filter-bar">
     <input class="filter-input" id="bases-filter" type="text"
            placeholder="Filter by name, galaxy, portal address…" />
+    <label style="display:inline-flex;align-items:center;gap:.35em;white-space:nowrap">
+      <input type="checkbox" id="bases-mine-only"> Only my bases
+    </label>
     <span class="filter-count" id="bases-count">{{ bases|length }} bases</span>
   </div>
   <div class="table-wrap">
@@ -422,13 +425,14 @@ header {
           <th>Galaxy</th>
           <th style="text-align:right">#</th>
           <th>Base Name</th>
+          <th>Owner</th>
           <th title="Format: PSSS YYZZ ZXXX — P=planet (1 digit), SSS=system index (3), YY=voxelY (2), ZZZ=voxelZ (3), XXX=voxelX (3). Sorted by system index first, then planet, then voxel coordinates.">Portal Address</th>
           <th>Glyphs</th>
         </tr>
       </thead>
       <tbody>
         {% for b in bases %}
-        <tr data-base-id="{{ b.id }}">
+        <tr data-base-id="{{ b.id }}" data-owner="{{ b.owner }}">
           <td data-val="{{ '0' if b.favourite else '1' }}" style="text-align:center">{% if b.favourite %}<span class="fav-star">&#9733;</span>{% endif %}</td>
           <td data-val="{{ b.galaxy }}"><span class="gal-badge">{{ b.galaxy }}</span></td>
           <td class="mono" style="text-align:right" data-val="{{ b.galaxy_num }}">{{ b.galaxy_num }}</td>
@@ -436,6 +440,7 @@ header {
             <span class="base-name-text">{{ b.user_name or b.name }}</span>
             <input class="base-name-input" type="text" value="{{ b.user_name or b.name }}" style="display:none">
           </td>
+          <td>{{ b.owner }}</td>
           <td class="mono" data-val="{{ b.portal_sort_key }}">{{ b.portal_hex }}</td>
           <td class="glyphs">{% for g in b.glyphs %}<span class="gi"><img src="/static/glyphs/glyph_{{ g }}.png" alt="{{ g }}"></span>{% endfor %}</td>
         </tr>
@@ -549,7 +554,35 @@ function wireFilter(inputId, tableId, countId, noun) {
   });
 }
 
-wireFilter('bases-filter', 'bases-table', 'bases-count', 'bases');
+(function() {
+  const input  = document.getElementById('bases-filter');
+  const cbMine = document.getElementById('bases-mine-only');
+  const tbody  = document.getElementById('bases-table').querySelector('tbody');
+  const rows   = Array.from(tbody.querySelectorAll('tr'));
+  const countEl = document.getElementById('bases-count');
+  const total  = rows.length;
+
+  // Most common non-empty owner = "me"
+  const ownerCounts = {};
+  rows.forEach(r => { const o = r.dataset.owner; if (o) ownerCounts[o] = (ownerCounts[o]||0)+1; });
+  const primaryOwner = Object.entries(ownerCounts).sort((a,b)=>b[1]-a[1])[0]?.[0] || '';
+
+  function applyFilter() {
+    const q = input.value.trim().toLowerCase();
+    const mineOnly = cbMine.checked && primaryOwner;
+    let shown = 0;
+    rows.forEach(row => {
+      const hit = (!q || row.textContent.toLowerCase().includes(q))
+               && (!mineOnly || row.dataset.owner === primaryOwner);
+      row.style.display = hit ? '' : 'none';
+      if (hit) shown++;
+    });
+    countEl.textContent = (q || cbMine.checked) ? `${shown} of ${total} bases` : `${total} bases`;
+  }
+
+  input.addEventListener('input', applyFilter);
+  cbMine.addEventListener('change', applyFilter);
+})();
 
 // Discoveries: text filter + type checkboxes combined
 (function() {
@@ -790,6 +823,9 @@ document.getElementById('reload-btn').addEventListener('click', async () => {
   await fetch('/api/reload', { method: 'POST' });
   location.reload();
 });
+
+// Clear all filter inputs on load so browser form-restore doesn't leave stale filters.
+document.querySelectorAll('.filter-input').forEach(el => { el.value = ''; });
 </script>
 </body>
 </html>

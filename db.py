@@ -42,6 +42,7 @@ def init_db():
                 notes           TEXT DEFAULT '',
                 user_name       TEXT DEFAULT '',
                 last_update_ts  INTEGER DEFAULT NULL,
+                base_type       TEXT DEFAULT '',
                 UNIQUE(portal_compact, position)
             );
 
@@ -60,9 +61,14 @@ def init_db():
                 source_file     TEXT,
                 UNIQUE(portal_compact, dt)
             );
+
+            CREATE TABLE IF NOT EXISTS players (
+                uid  TEXT PRIMARY KEY,
+                usn  TEXT NOT NULL DEFAULT ''
+            );
         """)
-        # Migrate: if position column is missing, rebuild bases from scratch and re-import all files
         info = {row[1]: row for row in conn.execute("PRAGMA table_info(bases)").fetchall()}
+        # Hard migration: position column missing — must rebuild from scratch
         if 'position' not in info:
             conn.executescript("""
                 DROP TABLE bases;
@@ -86,10 +92,15 @@ def init_db():
                     notes           TEXT DEFAULT '',
                     user_name       TEXT DEFAULT '',
                     last_update_ts  INTEGER DEFAULT NULL,
+                    base_type       TEXT DEFAULT '',
                     UNIQUE(portal_compact, position)
                 );
                 DELETE FROM loaded_files;
             """)
+        # Safe migration: add base_type column without losing data; force reload to populate it
+        elif 'base_type' not in info:
+            conn.execute("ALTER TABLE bases ADD COLUMN base_type TEXT DEFAULT ''")
+            conn.execute("DELETE FROM loaded_files")
         for table in ("discoveries",):
             try:
                 conn.execute(f"ALTER TABLE {table} ADD COLUMN notes TEXT DEFAULT ''")
@@ -97,6 +108,15 @@ def init_db():
                 pass
         try:
             conn.execute("ALTER TABLE discoveries ADD COLUMN discovered_ts INTEGER DEFAULT NULL")
+        except Exception:
+            pass
+        for col in ("owner TEXT DEFAULT ''", "owner_uid TEXT DEFAULT ''"):
+            try:
+                conn.execute(f"ALTER TABLE bases ADD COLUMN {col}")
+            except Exception:
+                pass
+        try:
+            conn.execute("ALTER TABLE discoveries ADD COLUMN discoverer_uid TEXT DEFAULT ''")
         except Exception:
             pass
 
@@ -122,15 +142,33 @@ def mark_loaded(filename: str, mtime: float):
         )
 
 
-def upsert_base(compact: str, base: dict, source_file: str):
+def upsert_player(uid: str, usn: str):
+    if not uid:
+        return
     with _conn() as conn:
+        conn.execute(
+            "INSERT INTO players (uid, usn) VALUES (?, ?)"
+            " ON CONFLICT(uid) DO UPDATE SET"
+            " usn = CASE WHEN excluded.usn != '' THEN excluded.usn ELSE usn END",
+            (uid, usn or ""),
+        )
+
+
+def upsert_base(compact: str, base: dict, source_file: str) -> str:
+    """Returns 'inserted' or 'updated'."""
+    with _conn() as conn:
+        existing = conn.execute(
+            "SELECT id FROM bases WHERE portal_compact = ? AND position = ?",
+            (compact, base["position"]),
+        ).fetchone()
         conn.execute(
             """
             INSERT INTO bases
                 (portal_compact, position, galaxy, galaxy_num, galaxy_save_idx, name,
                  portal_hex, portal_sort_key, glyphs, favourite,
-                 voxel_x, voxel_y, voxel_z, system_index, source_file, last_update_ts)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 voxel_x, voxel_y, voxel_z, system_index, source_file, last_update_ts,
+                 base_type, owner, owner_uid)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(portal_compact, position) DO UPDATE SET
                 galaxy          = excluded.galaxy,
                 galaxy_num      = excluded.galaxy_num,
@@ -143,6 +181,9 @@ def upsert_base(compact: str, base: dict, source_file: str):
                 voxel_z         = excluded.voxel_z,
                 system_index    = excluded.system_index,
                 source_file     = excluded.source_file,
+                base_type       = excluded.base_type,
+                owner     = CASE WHEN excluded.owner != '' THEN excluded.owner ELSE owner END,
+                owner_uid = CASE WHEN excluded.owner_uid != '' THEN excluded.owner_uid ELSE owner_uid END,
                 name = CASE
                     WHEN excluded.last_update_ts IS NULL THEN name
                     WHEN last_update_ts IS NULL THEN excluded.name
@@ -173,8 +214,12 @@ def upsert_base(compact: str, base: dict, source_file: str):
                 base.get("system_index"),
                 source_file,
                 base.get("last_update_ts"),
+                base.get("base_type", ""),
+                base.get("owner", ""),
+                base.get("owner_uid", ""),
             ),
         )
+        return "inserted" if existing is None else "updated"
 
 
 def upsert_discovery(compact: str, disc: dict, source_file: str) -> str:
@@ -193,25 +238,31 @@ def upsert_discovery(compact: str, disc: dict, source_file: str) -> str:
                 conn.execute(
                     """
                     UPDATE discoveries
-                       SET custom_name = ?, discoverer = ?,
+                       SET custom_name = ?, discoverer = ?, discoverer_uid = ?,
                            galaxy = ?, galaxy_num = ?, source_file = ?,
                            discovered_ts = COALESCE(discovered_ts, ?)
                      WHERE portal_compact = ? AND dt = ?
                     """,
                     (
-                        disc["custom_name"], disc["discoverer"],
+                        disc["custom_name"], disc["discoverer"], disc.get("discoverer_uid", ""),
                         disc["galaxy"], disc["galaxy_num"], source_file,
                         disc.get("discovered_ts"),
                         compact, disc["dt"],
                     ),
                 )
                 return "updated"
-            # Fill in discovered_ts even when the rest of the row is skipped.
+            # Fill in discovered_ts and discoverer_uid even when the rest of the row is skipped.
             if disc.get("discovered_ts") is not None:
                 conn.execute(
                     "UPDATE discoveries SET discovered_ts = ? "
                     "WHERE portal_compact = ? AND dt = ? AND discovered_ts IS NULL",
                     (disc["discovered_ts"], compact, disc["dt"]),
+                )
+            if disc.get("discoverer_uid"):
+                conn.execute(
+                    "UPDATE discoveries SET discoverer_uid = ? "
+                    "WHERE portal_compact = ? AND dt = ? AND (discoverer_uid IS NULL OR discoverer_uid = '')",
+                    (disc["discoverer_uid"], compact, disc["dt"]),
                 )
             return "skipped"
 
@@ -219,16 +270,16 @@ def upsert_discovery(compact: str, disc: dict, source_file: str) -> str:
             """
             INSERT INTO discoveries
                 (portal_compact, dt, galaxy, galaxy_num, portal_hex,
-                 portal_sort_key, glyphs, custom_name, discoverer, source_file,
-                 discovered_ts)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 portal_sort_key, glyphs, custom_name, discoverer, discoverer_uid,
+                 source_file, discovered_ts)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 compact, disc["dt"],
                 disc["galaxy"], disc["galaxy_num"],
                 disc["portal_hex"], disc["portal_sort_key"],
                 json.dumps(disc["glyphs"]),
-                disc["custom_name"], disc["discoverer"],
+                disc["custom_name"], disc["discoverer"], disc.get("discoverer_uid", ""),
                 source_file,
                 disc.get("discovered_ts"),
             ),
@@ -251,7 +302,10 @@ def get_system_galaxy() -> dict:
 
 def get_bases() -> list:
     with _conn() as conn:
-        rows = conn.execute("SELECT * FROM bases ORDER BY galaxy_num, name").fetchall()
+        rows = conn.execute(
+            "SELECT * FROM bases WHERE base_type NOT IN ('PlayerShipBase', 'FreighterBase')"
+            " ORDER BY galaxy_num, name"
+        ).fetchall()
         return [
             {
                 "id": r["id"],
@@ -265,6 +319,7 @@ def get_bases() -> list:
                 "favourite": bool(r["favourite"]),
                 "notes": r["notes"] or "",
                 "user_name": r["user_name"] or "",
+                "owner": r["owner"] or "",
             }
             for r in rows
         ]
@@ -286,6 +341,10 @@ def _fmt_ts(ts) -> str:
 
 def get_discoveries() -> list:
     with _conn() as conn:
+        players = {
+            r["uid"]: r["usn"]
+            for r in conn.execute("SELECT uid, usn FROM players").fetchall()
+        }
         rows = conn.execute(
             "SELECT * FROM discoveries ORDER BY dt, galaxy_num, portal_sort_key"
         ).fetchall()
@@ -300,7 +359,7 @@ def get_discoveries() -> list:
                 "glyphs": json.loads(r["glyphs"]),
                 "custom_name": r["custom_name"] or "",
                 "user_name": r["user_name"] or "",
-                "discoverer": r["discoverer"] or "",
+                "discoverer": r["discoverer"] or players.get(r["discoverer_uid"] or "", ""),
                 "discovered_ts": r["discovered_ts"],
                 "discovered_date": _fmt_ts(r["discovered_ts"]),
                 "notes": r["notes"] or "",

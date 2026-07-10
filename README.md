@@ -110,3 +110,19 @@ NMS does not store procedurally generated names — it fetches them from its ser
 - Preserve discoveries that roll out of the save file's fixed-size buffer — the database already retains them, but older entries not present in any current import will eventually need a manual review/purge workflow
 
 
+## Jim notes
+- download HGPAK https://github.com/monkeyman192/HGPAKtool
+- *.pak files are in C:\Program Files (x86)\Steam\steamapps\common\No Man's Sky\GAMEDATA\PCBANKS
+- copy pak file into ~/documents/nms/paks/paks
+```
+hgpaktool.exe .\paks   
+cd EXTRACTED/metadata/reality/tables/
+MBINCompiler.exe .\fishdatatable.mbin
+MBINCompiler.exe ./reality                # decodes the entire dir
+rg -i roach *.MXML
+
+
+```
+-
+
+
