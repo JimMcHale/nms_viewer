@@ -75,6 +75,7 @@ The **↻ Reload Files** button in the top bar clears the file-processed cache a
 - Click any column header to sort; click again to reverse
 - **Editable names**: click any name cell to enter a custom display name. Press Enter or click away to save; Escape to cancel. Your name is stored locally and persists across imports without affecting the JSON-sourced name
 - **Notes**: each row has a notes cell — click to add free-text notes that persist in the database
+![Example Bases pict](images/Bases.png)
 
 ### Discoveries tab
 - All discoveries decoded from `DiscoveryManagerData` in the save file
@@ -84,6 +85,7 @@ The **↻ Reload Files** button in the top bar clears the file-processed cache a
 - **Editable names**: click any name cell to edit it; persists locally independent of the save
 - **Notes**: per-discovery notes that persist in the database
 - **Discoverer**: shown from the save file (`OWS.USN`). If blank for a record, resolved automatically by looking up the player's UID in the player table built from other records in the same or other imports
+![Example Discoveries pict](images/Discoveries.png)
 
 ## Player tracking
 
